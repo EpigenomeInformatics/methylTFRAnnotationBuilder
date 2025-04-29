@@ -8,6 +8,7 @@
 
 # User-specific files
 .Ruserdata
+/icbb/projects/igunduz/irem_github/methylTFRAnnotationBuilder/R/test.R
 
 # Example code in package build process
 *-Ex.R

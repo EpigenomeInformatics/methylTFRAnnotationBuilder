@@ -1,0 +1,8 @@
+Package: methylTFRAnnotationBuilder
+Title: Build Annotation for methylTFR
+Version: 0.99.0
+Date: 2025-29-04
+RoxygenNote: 7.3.2
+Encoding: UTF-8
+License: MIT
+LazyData: false
