@@ -3,6 +3,7 @@
 #' @param genome The genome object to use, no default value is set
 #' @param threads The number of threads to use for parallel processing, default is 1
 #' @return GC content values for each chromosome
+#' @import GenomicRanges Biostrings parallel
 #' @export
 calculate_gcdist <- function(genome, threads = 1) {
   chr_len <- seqlengths(genome)
@@ -20,6 +21,7 @@ calculate_gcdist <- function(genome, threads = 1) {
 #' @param chr The chromosome name
 #' @param chr_len The length of the chromosome
 #' @param genome The genome object to use
+#' @import GenomicRanges Biostrings
 #' @return GC content values for the chromosome
 #' @export
 get_gcdist <- function(chr, chr_len, genome) {
@@ -31,7 +33,7 @@ get_gcdist <- function(chr, chr_len, genome) {
   qgr <- qgr[-length(qgr)]
   dna_seq <- Biostrings::getSeq(genome, qgr)
   # calculate GC content
-  nucfreqs <- letterFrequency(dna_seq, c("A", "C", "G", "T"))
+  nucfreqs <- Biostrings::letterFrequency(dna_seq, c("A", "C", "G", "T"))
   gc_tmp <- rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs)
   gc_tmp <- na.omit(gc_tmp)
 
@@ -42,11 +44,12 @@ get_gcdist <- function(chr, chr_len, genome) {
 #' @description  compute the GC content for a given DNA sequence
 #' @param X The DNA sequence to compute GC content for
 #' @return GC content value
+#' @import Biostrings
 #' @export
 compute_gc <- function(X) {
   x <- DNAString(as.character(X))
   # center around
-  nucfreqs <- letterFrequencyInSlidingView(x,
+  nucfreqs <- Biostrings::letterFrequencyInSlidingView(x,
     view.width = 30,
     letters = c("A", "C", "G", "T")
   )
@@ -85,6 +88,7 @@ convert_to_matrix <- function(bins) {
 #' @param genome The genome object to use
 #' @param tf_bindsites The TF binding sites to use
 #' @param enhancer The enhancer regions to use
+#' @import GenomicRanges Biostrings
 #' @return A matrix of GC content values
 #' @export
 processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites, enhancer = NULL) {
@@ -93,7 +97,7 @@ processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites, enhancer =
   if (!is.null(enhancer)) {
     tfbs <- subsetByOverlaps(tfbs, enhancer, ignore.strand = T)
   }
-  dna_seq <- getSeq(genome, tfbs)
+  dna_seq <- Biostrings::getSeq(genome, tfbs)
   logger::log_info(paste("Processing compute gc .. ", motif))
   motif_gc <- lapply(dna_seq, compute_gc)
   logger::log_info(paste("Processing convert to bins .. ", motif))

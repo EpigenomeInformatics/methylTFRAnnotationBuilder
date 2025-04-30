@@ -7,7 +7,7 @@
 #' @param enhancer GRanges object for distal regions (default: NULL)
 #' @author Irem Gunduz
 #' @param genome Character genome assembly (e.g., "hg38") or BSgenome object
-#' @import GenomicRanges Biostrings parallel motifmatchr
+#' @import GenomicRanges Biostrings parallel motifmatchr logger
 #' @export
 #' @return NULL
 build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
@@ -23,24 +23,29 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
   } else {
     stop("annotations must be either a character vector of motif set names or a GRangesList.")
   }
-
+  if (!inherits(genome, "BSgenome") && !is.character(genome)) {
+    stop("genome must be either a BSgenome object or a character assembly string.")
+  }
   if (mode == "motifsets") {
     for (set_name in annotations) {
-      message(sprintf("Building annotation for motifset: %s", set_name))
+      log_info("Building annotation for motifset: {set_name}")
 
       # Get the BSgenome object and PWM object
       prep <- prepareMotifmatchr(genome, set_name)
 
-      # Get tf_bindsites GRanges objet
-      tf_bindsites <- findTFBindSites(prep$genome, prep$motifs)
+      # Get tf_bindsites GRanges object
+      tf_bindsites <- findTFBindSites(prep$genome, prep$motifs, cores)
+      genome <- prep$genome
 
       # Save the GRanges object
+      log_info("Saving GRanges for: {set_name}")
       saveRDS(tf_bindsites, file = file.path(outdir, paste0(set_name, "_tf_bindsites.rds")))
+      log_info("Saved annotation for {set_name}.")
     }
   } else if (mode == "GRangesList") { # need to fix it for GRangesList
     for (set_name in names(annotations)) {
       tf_bindsites <- annotations[[set_name]]
-      message(sprintf("Saving provided GRanges for: %s", set_name))
+      log_info("Saving provided GRanges for: {set_name}")
 
       if (any(width(tf_bindsites) < 400)) {
         stop(sprintf(
@@ -49,72 +54,68 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
         ))
       }
       saveRDS(tf_bindsites, file = file.path(outdir, paste0(set_name, "_tf_bindsites.rds")))
-      message(sprintf("Saved annotation for %s.", set_name))
-    }
-  }
-  # Compute the GC dist for the genome
-  gc_dist <- calculate_gcdist(genome = prep$genome, threads = cores)
-  gc_bin <- quantile(gc_dist, probs = seq(0, 1, 1 / 5))
-
-  for (set_name in annotations) {
-    # Compute the GC frequency for the provided GRangesList
-    # Create a temp directory for GC frequency calculation with set_name
-    temp_dir <- file.path(pkg.base.dir, "temp", set_name)
-    if (!dir.exists(temp_dir)) {
-      dir.create(temp_dir, recursive = TRUE)
+      log_info("Saved annotation for {set_name}.")
     }
 
-    # Define the number of chunks to process
-    num_chunks <- ceiling(length(prep$motifs) / chunk_size)
+    # Compute the GC dist for the genome
+    gc_dist <- calculate_gcdist(genome = genome, threads = cores)
+    gc_bin <- quantile(gc_dist, probs = seq(0, 1, 1 / 5))
 
-    # Process motifs in chunks
-    for (chunk_idx in 1:num_chunks) {
-      chunk_filename <- file.path(temp_dir, paste0("motif_gcfreq_chunk_", chunk_idx, ".rds"))
-      if (!file.exists(chunk_filename)) {
-        # Define the motif list for the current chunk
-        start_idx <- (chunk_idx - 1) * chunk_size + 1
-        end_idx <- min(chunk_idx * chunk_size, length(motif_list))
-        chunk_motifs <- motif_list[start_idx:end_idx]
-
-        # Process the motifs in the chunk
-        motif_gcfreq_chunk <- parallel::mclapply(chunk_motifs, processMotifs2Matrix,
-          tf_bindsites = tf_bindsites,
-          gc_bin = gc_bin, genome = prep$genome,
-          enhancer = enhancer, mc.cores = cores
-        )
+    for (set_name in annotations) {
+      # Compute the GC frequency for the provided GRangesList
+      # Create a temp directory for GC frequency calculation with set_name
+      temp_dir <- file.path(pkg.base.dir, "temp", set_name)
+      if (!dir.exists(temp_dir)) {
+        dir.create(temp_dir, recursive = TRUE)
       }
-      names(motif_gcfreq_chunk) <- chunk_motifs
-      saveRDS(motif_gcfreq_chunk, file = chunk_filename)
-    }
 
-    chunk_files <- list.files(path = temp_dir, pattern = "motif_gcfreq_chunk_\\d+\\.rds", full.names = TRUE)
+      # Define the number of chunks to process
+      num_chunks <- ceiling(length(tf_bindsites) / chunk_size)
+      motif_list <- names(tf_bindsites)
 
-    # Combine the results from all chunks
-    merged_data <- NULL
-    for (file_path in chunk_files) {
-      chunk_data <- readRDS(file_path)
-      if (is.null(merged_data)) {
-        merged_data <- chunk_data
+      # Process motifs in chunks
+      for (chunk_idx in 1:num_chunks) {
+        chunk_filename <- file.path(temp_dir, paste0("motif_gcfreq_chunk_", chunk_idx, ".rds"))
+        if (!file.exists(chunk_filename)) {
+          # Define the motif list for the current chunk
+          start_idx <- (chunk_idx - 1) * chunk_size + 1
+          end_idx <- min(chunk_idx * chunk_size, length(motif_list))
+          chunk_motifs <- motif_list[start_idx:end_idx]
+
+          # Process the motifs in the chunk
+          motif_gcfreq_chunk <- parallel::mclapply(chunk_motifs,
+            processMotifs2Matrix,
+            tf_bindsites = tf_bindsites,
+            gc_bin = gc_bin, genome = genome,
+            enhancer = enhancer, mc.cores = cores
+          )
+        }
+        names(motif_gcfreq_chunk) <- chunk_motifs
+        saveRDS(motif_gcfreq_chunk, file = chunk_filename)
+      }
+
+      # List all chunk files in the temp directory
+      chunk_files <- list.files(path = temp_dir, pattern = "motif_gcfreq_chunk_\\d+\\.rds", full.names = TRUE)
+
+      # Combine the results from all chunks
+      merged_data <- do.call(c, lapply(chunk_files, readRDS))
+      merged_data <- merged_data[names(tf_bindsites)]
+
+      if (!is.null(enhancer)) {
+        merged_file <- file.path(outdir, paste0(set_name, "_distal_motif_gcfreq.rds"))
       } else {
-        merged_data <- c(merged_data, chunk_data)
+        merged_file <- file.path(outdir, paste0(set_name, "_motif_gcfreq.rds"))
+      }
+
+      # Remove the temp directory temp_dir
+      if (dir.exists(temp_dir)) {
+        unlink(temp_dir, recursive = TRUE)
+        log_info("Temporary directory '{temp_dir}' has been removed.")
+      } else {
+        log_info("Temporary directory '{temp_dir}' does not exist.")
       }
     }
-    merged_data <- merged_data[names(tf_bindsites)]
-    final_dir <- file.path(pkg.base.dir, "inst/extdata")
-    if (!is.null(enhancer)) {
-      merged_file <- file.path(final_dir, paste0(motifset, "_distal_motif_gcfreq.rds"))
-    } else {
-      merged_file <- file.path(final_dir, paste0(motifset, "_motif_gcfreq.rds"))
-    }
-
-    # Remove the temp directory temp_dir
-    if (dir.exists(temp_dir)) {
-      unlink(temp_dir, recursive = TRUE)
-      message(sprintf("Temporary directory '%s' has been removed.", temp_dir))
-    } else {
-      message(sprintf("Temporary directory '%s' does not exist.", temp_dir))
-    }
+    log_info("All annotations built successfully.")
+    return(invisible(NULL))
   }
-  message("All annotations built successfully.")
-  return(invisible(NULL))
 }
