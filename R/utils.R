@@ -109,13 +109,13 @@ getGenomeObject <- function(assembly, adjChrNames = TRUE) {
   if (assembly %in% c("hg19")) {
     requireNamespace("BSgenome.Hsapiens.UCSC.hg19", quietly = TRUE)
     res <- BSgenome.Hsapiens.UCSC.hg19::Hsapiens
-  } else if (assembly %in% c("GRCh37", "GRCh37_chr")) {
+  } else if (assembly %in% c("grch37", "grch37_chr")) {
     requireNamespace("BSgenome.Hsapiens.1000genomes.hs37d5", quietly = TRUE)
     res <- BSgenome.Hsapiens.1000genomes.hs37d5::BSgenome.Hsapiens.1000genomes.hs37d5
   } else if (assembly %in% c("hg38", "hg38_chr")) {
     requireNamespace("BSgenome.Hsapiens.UCSC.hg38", quietly = TRUE)
     res <- BSgenome.Hsapiens.UCSC.hg38::Hsapiens
-  } else if (assembly %in% c("GRCh38", "GRCh38_chr")) {
+  } else if (assembly %in% c("grch38", "grch38_chr")) {
     requireNamespace("BSgenome.Hsapiens.NCBI.GRCh38", quietly = TRUE)
     res <- BSgenome.Hsapiens.NCBI.GRCh38::Hsapiens
   } else if (assembly %in% c("mm9")) {
@@ -138,12 +138,11 @@ getGenomeObject <- function(assembly, adjChrNames = TRUE) {
 
   return(res)
 }
-
 #' @title findTFBindSites
 #' @description Find TF binding sites from a genome and motif list (parallelized across chromosomes)
 #' @param genome BSgenome object
 #' @param motifs PWMatrixList or PFMatrixList of motifs
-#' @param BPPARAM Parallel backend (default: MulticoreParam or SnowParam)
+#' @param BPPARAM Parallel backend (default: automatically selected by bpparam())
 #' @return A GRangesList of binding sites for each motif
 #' @import GenomicRanges motifmatchr Biostrings BiocParallel
 #' @export
@@ -155,7 +154,9 @@ findTFBindSites <- function(genome, motifs, BPPARAM = BiocParallel::bpparam()) {
     stop("motifs must be a PWMatrixList or PFMatrixList.")
   }
 
-  seqNames <- GenomeInfoDb::seqnames(genome)[1:24]
+  # Filter for main chromosomes
+  all_seqnames <- GenomeInfoDb::seqnames(genome)
+  seqNames <- grep("^chr[0-9XY]+$", all_seqnames, value = TRUE)
 
   tf_binding_list <- BiocParallel::bplapply(names(motifs), function(mo) {
     binding_sites_motif <- list()
@@ -200,4 +201,27 @@ findTFBindSites <- function(genome, motifs, BPPARAM = BiocParallel::bpparam()) {
 
   tf_binding_list <- GenomicRanges::GRangesList(tf_binding_list)
   return(tf_binding_list)
+}
+
+#' @title computeGCgenome_helper
+#' @description  compute GC content for a given chromosome
+#' @param genome The genome object to use
+#' @param chr The chromosome name
+#' @param chr_len The length of the chromosome
+#' @return A GRanges object with GC content values
+#' @keywords internal
+#' @import GenomicRanges Biostrings
+computeGCgenome_helper <- function(genome, chr, chr_len) {
+  qgr <- GRanges(
+    seqnames = chr,
+    ranges = IRanges(start = seq(1, chr_len[chr], 30), width = 30)
+  )
+  qgr <- qgr[-length(qgr)]
+  dna_seq <- getSeq(genome, qgr)
+  nucfreqs <- letterFrequency(dna_seq, c("A", "C", "G", "T"))
+  gc_tmp <- na.omit(rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs))
+  gc_bin <- seq(0, 1, length.out = 6)
+  gcbin <- findInterval(gc_tmp, gc_bin, rightmost.closed = TRUE)
+  values(qgr) <- DataFrame(GC_bias = gc_tmp, GC_bin = gcbin)
+  return(qgr)
 }

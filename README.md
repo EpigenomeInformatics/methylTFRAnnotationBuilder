@@ -23,6 +23,7 @@ devtools::install_github("EpigenomeInformatics/methylTFRAnnotationBuilder")
 ## Example usage
 
 ```r
+# Load necessary packages
 suppressPackageStartupMessages({
   library(TFBSTools)
   library(motifmatchr)
@@ -31,16 +32,20 @@ suppressPackageStartupMessages({
   library(dplyr)
   library(stringr)
   library(parallel)
+  library(logger)
   library(methylTFRAnnotationBuilder)})
 
+# Set the path to package
+pkg.base.dir <- getwd() 
+
 # Create the package scaffold
-createMethylTFRPackageScaffold("Hg38",dest = getwd(), motifSets = c("JASPAR2020"))
+createMethylTFRPackageScaffold("Hg38",dest = pkg.base.dir, motifSets = c("JASPAR2020"))
+
+# Update the package path
+pkg.base.dir <- paste0(pkg.base.dir,"methylTFRAnnotationHg38")
 
 # Create annotations
-build_annotations("JASPAR2020", pkg.base.dir, chunk_size = 10, "Hg38", cores = 10, enhancer = NULL)
-
-# Create genome wide gc_dist
-#TODO
+build_annotations("JASPAR2020", pkg.base.dir, chunk_size = 2, "Hg38", cores = 10, enhancer = NULL)
 ```
 
 ```bash

@@ -109,3 +109,24 @@ processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites, enhancer =
   normalized_matrix <- sweep(as.matrix(m_gcfreq), 2, colSums(as.matrix(m_gcfreq)), FUN = "/")
   return(normalized_matrix)
 }
+
+#' @title computeGCgenome
+#' @description  compute GC content for the entire genome
+#' @param genome The genome object to use
+#' @param cores The number of cores to use for parallel processing
+#' @return A GRanges object with GC content values for the entire genome
+#' @import GenomicRanges Biostrings
+#' @export
+#' @importFrom BiocParallel bplapply
+computeGCgenome <- function(genome, cores = 1) {
+  chr_len <- seqlengths(genome)
+  chr_names <- names(chr_len)[1:24]
+
+  # Automatically select the parallel backend
+  param <- bpparam()
+  param$workers <- cores # Set the number of cores/workers
+
+  # Use bplapply for parallel processing
+  t_qgr <- do.call(c, bplapply(chr_names, compute_gc_genome, chr_len, BPPARAM = param))
+  return(t_qgr)
+}

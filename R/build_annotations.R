@@ -7,7 +7,7 @@
 #' @param enhancer GRanges object for distal regions (default: NULL)
 #' @author Irem Gunduz
 #' @param genome Character genome assembly (e.g., "hg38") or BSgenome object
-#' @import GenomicRanges Biostrings parallel motifmatchr logger
+#' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
 #' @export
 #' @return NULL
 build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
@@ -26,16 +26,23 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
   if (!inherits(genome, "BSgenome") && !is.character(genome)) {
     stop("genome must be either a BSgenome object or a character assembly string.")
   }
+  if (!is.numeric(cores)) {
+    # Set the default number of cores to 1 if cores is not numeric
+    cores <- 1
+  }
   if (mode == "motifsets") {
     for (set_name in annotations) {
       log_info("Building annotation for motifset: {set_name}")
-
+      if (is.character(genome)) {
+        genome <- tolower(genome)
+      }
       # Get the BSgenome object and PWM object
       prep <- prepareMotifmatchr(genome, set_name)
+      assembly <- unique(GenomeInfoDb::genome(prep$genome))
+      genome <- prep$genome
 
       # Get tf_bindsites GRanges object
-      tf_bindsites <- findTFBindSites(prep$genome, prep$motifs, cores)
-      genome <- prep$genome
+      tf_bindsites <- findTFBindSites(genome, prep$motifs, BPPARAM = BiocParallel::MulticoreParam(workers = cores))
 
       # Save the GRanges object
       log_info("Saving GRanges for: {set_name}")
@@ -57,9 +64,18 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
       log_info("Saved annotation for {set_name}.")
     }
 
-    # Compute the GC dist for the genome
+    # Compute the GC dist
+    log_info("Computing GC dist for the genome ...")
+    gc_genome <- computeGCgenome(genome = genome, cores = cores)
+
+    # Save the GC dist
+    log_info("Saving GC dist for the genome ...")
+    saveRDS(gc_genome, file = file.path(outdir, paste0("genome_wide_GC_", assembly, ".rds")))
+
+    # Compute the GC dist for the genome for TFBS usage
     gc_dist <- calculate_gcdist(genome = genome, threads = cores)
     gc_bin <- quantile(gc_dist, probs = seq(0, 1, 1 / 5))
+
 
     for (set_name in annotations) {
       # Compute the GC frequency for the provided GRangesList

@@ -9,7 +9,7 @@
 #' Inspired by \code{createPackageScaffold} from the \code{RnBeadsAnnotationCreator} package.
 #' @examples
 #' createMethylTFRPackageScaffold("hg38")
-#' @noRd
+#' @export
 createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets = c("JASPAR2020")) {
   pkg.name <- paste0("methylTFRAnnotations", assembly)
   desc <- c(

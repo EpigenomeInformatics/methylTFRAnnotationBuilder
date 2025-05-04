@@ -11,7 +11,7 @@ findTFBindSites(genome, motifs, BPPARAM = BiocParallel::bpparam())
 
 \item{motifs}{PWMatrixList or PFMatrixList of motifs}
 
-\item{BPPARAM}{Parallel backend (default: MulticoreParam or SnowParam)}
+\item{BPPARAM}{Parallel backend (default: automatically selected by bpparam())}
 }
 \value{
 A GRangesList of binding sites for each motif
