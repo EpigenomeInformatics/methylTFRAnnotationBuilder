@@ -1,6 +1,8 @@
 Package: methylTFRAnnotationBuilder
-Title: Build Annotation for methylTFR
+Title: Build Annotation packages for methylTFR usage
 Version: 0.99.0
+Authors@R: c(person("Irem B.", "Gunduz", email = "irembgunduz@gmail.com", role = c("aut", "cre")))
+URL: https://github.com/EpigenomeInformatics/methylTFRAnnotationBuilder
 Date: 2025-29-04
 RoxygenNote: 7.3.2
 Encoding: UTF-8

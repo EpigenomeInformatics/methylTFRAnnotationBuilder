@@ -11,7 +11,7 @@
 #' createMethylTFRPackageScaffold("hg38")
 #' @export
 createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets = c("JASPAR2020")) {
-  pkg.name <- paste0("methylTFRAnnotations", assembly)
+  pkg.name <- paste0("methylTFRAnnotation", assembly)
   desc <- c(
     Package = pkg.name,
     Title = paste("methylTFR Annotations for", assembly),

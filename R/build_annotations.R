@@ -63,14 +63,16 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
       saveRDS(tf_bindsites, file = file.path(outdir, paste0(set_name, "_tf_bindsites.rds")))
       log_info("Saved annotation for {set_name}.")
     }
-
+    genome_gc_path <- file.path(outdir, paste0("genome_wide_GC_", assembly, ".rds"))
+    if(!file.exists(genome_gc_path)) {
     # Compute the GC dist
     log_info("Computing GC dist for the genome ...")
     gc_genome <- computeGCgenome(genome = genome, cores = cores)
 
     # Save the GC dist
     log_info("Saving GC dist for the genome ...")
-    saveRDS(gc_genome, file = file.path(outdir, paste0("genome_wide_GC_", assembly, ".rds")))
+    saveRDS(gc_genome, file = genome_gc_path)
+    }
 
     # Compute the GC dist for the genome for TFBS usage
     gc_dist <- calculate_gcdist(genome = genome, threads = cores)
