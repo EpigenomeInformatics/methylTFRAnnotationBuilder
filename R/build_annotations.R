@@ -30,7 +30,7 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
     # Set the default number of cores to 1 if cores is not numeric
     cores <- 1
   }
-  tf_bindsites_list <- annotations
+  tf_bindsites_list <- list()
   if (mode == "motifsets") {
     for (set_name in annotations) {
       log_info("Building annotation for motifset: {set_name}")
@@ -69,6 +69,7 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
         saveRDS(tf_bindsites, file = tf_file)
         log_info("Saved annotation for {set_name}.")
       }
+      tf_bindsites_list[[set_name]] <- tf_bindsites
     }
   }
   genome_gc_path <- file.path(outdir, paste0("genome_wide_GC_", assembly, ".rds"))
