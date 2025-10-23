@@ -127,6 +127,7 @@ computeGCgenome <- function(genome, cores = 1) {
   param$workers <- cores # Set the number of cores/workers
 
   # Use bplapply for parallel processing
-  t_qgr <- do.call(c, bplapply(chr_names, computeGCgenome_helper, chr_len, BPPARAM = param))
+  t_qgr <- do.call(c, bplapply(chr_names, function(chr)
+   computeGCgenome_helper(genome, chr, chr_len), BPPARAM = param))
   return(t_qgr)
 }

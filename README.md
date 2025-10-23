@@ -29,6 +29,7 @@ suppressPackageStartupMessages({
   library(motifmatchr)
   library(Biostrings)
   library(data.table)
+  library(BiocParallel)
   library(dplyr)
   library(stringr)
   library(parallel)

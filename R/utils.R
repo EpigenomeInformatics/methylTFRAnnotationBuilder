@@ -220,7 +220,7 @@ computeGCgenome_helper <- function(genome, chr, chr_len) {
   dna_seq <- getSeq(genome, qgr)
   nucfreqs <- letterFrequency(dna_seq, c("A", "C", "G", "T"))
   gc_tmp <- na.omit(rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs))
-  gc_bin <- seq(0, 1, length.out = 6)
+  gcbin <- quantile(gc_tmp, probs = seq(0, 1, 1 / 5))
   gcbin <- findInterval(gc_tmp, gc_bin, rightmost.closed = TRUE)
   values(qgr) <- DataFrame(GC_bias = gc_tmp, GC_bin = gcbin)
   return(qgr)
