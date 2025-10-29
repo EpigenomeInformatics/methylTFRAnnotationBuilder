@@ -30,6 +30,7 @@ suppressPackageStartupMessages({
   library(Biostrings)
   library(data.table)
   library(BiocParallel)
+  library(BSgenome.Hsapiens.UCSC.hg38)
   library(dplyr)
   library(stringr)
   library(parallel)
@@ -46,7 +47,12 @@ createMethylTFRPackageScaffold("Hg38",dest = pkg.base.dir, motifSets = c("JASPAR
 pkg.base.dir <- paste0(pkg.base.dir,"methylTFRAnnotationHg38")
 
 # Create annotations
-build_annotations("JASPAR2020", pkg.base.dir, chunk_size = 2, "Hg38", cores = 10, enhancer = NULL)
+build_annotations(annotations = "JASPAR2020", 
+                  pkg.base.dir = pkg.base.dir,
+                  chunk_size = 2,
+                  genome = BSgenome.Hsapiens.UCSC.hg38,
+                  cores = 30,
+                  enhancer = NULL)
 ```
 
 ```bash

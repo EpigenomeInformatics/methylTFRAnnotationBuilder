@@ -6,6 +6,7 @@
 \usage{
 build_annotations(
   annotations,
+  annotations_name = NULL,
   pkg.base.dir,
   chunk_size = 10,
   genome,
@@ -14,7 +15,11 @@ build_annotations(
 )
 }
 \arguments{
-\item{annotations}{Character vector of motif set names (e.g., "cisbp", "encode") OR a named list of GRanges objects}
+\item{annotations}{Character vector of motif set names (e.g., "cisbp", "encode") OR a named list of GRanges objects
+representing TF binding sites.}
+
+\item{annotations_name}{Name for the annotation set (default: NULL), if annotations
+is a GRangesList, this parameter is mandatory.}
 
 \item{pkg.base.dir}{Output directory to save RDS files (default: inst/extdata)}
 

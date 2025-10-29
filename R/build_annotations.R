@@ -1,6 +1,9 @@
 #' @title  Build Annotations
 #' @description Build annotation RDS files from either motif set names or provided GRanges.
 #' @param annotations Character vector of motif set names (e.g., "cisbp", "encode") OR a named list of GRanges objects
+#' representing TF binding sites.
+#' @param annotations_name Name for the annotation set (default: NULL), if annotations
+#' is a GRangesList, this parameter is mandatory.
 #' @param pkg.base.dir Output directory to save RDS files (default: inst/extdata)
 #' @param chunk_size Number of annotations to save per RDS (default: 10)
 #' @param cores Number of cores to use for parallel processing (default: 10)
@@ -10,7 +13,8 @@
 #' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
 #' @export
 #' @return NULL
-build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
+build_annotations <- function(annotations,annotations_name=NULL,
+ pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
   outdir <- file.path(pkg.base.dir, "inst/extdata")
   if (!dir.exists(outdir)) {
     dir.create(outdir, recursive = TRUE)
@@ -23,15 +27,24 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
   } else {
     stop("annotations must be either a character vector of motif set names or a GRangesList.")
   }
-  if (!inherits(genome, "BSgenome") && !is.character(genome)) {
-    stop("genome must be either a BSgenome object or a character assembly string.")
+  if (!inherits(genome, "BSgenome")) {
+    stop("genome must be either a BSgenome object")
   }
   if (!is.numeric(cores)) {
     # Set the default number of cores to 1 if cores is not numeric
     cores <- 1
   }
-  tf_bindsites_list <- list()
+  if(mode == "GRangesList") {
+    if(is.null(annotations_name)) {
+      stop("annotations_name must be provided when annotations is a GRangesList.")
+    }
+  }
+  if(mode == "GRangesList") {
+    tf_bindsites_list <- list()
+    tf_bindsites_list[[annotations_name]] <- annotations
+  }
   if (mode == "motifsets") {
+    tf_bindsites_list <- list()
     for (set_name in annotations) {
       log_info("Building annotation for motifset: {set_name}")
       if (is.character(genome)) {
@@ -52,27 +65,9 @@ build_annotations <- function(annotations, pkg.base.dir, chunk_size = 10, genome
         log_info("Saved annotation for {set_name}.")
       }
     }
-  } else if (mode == "GRangesList") {
-    for (set_name in names(annotations)) {
-      tf_bindsites <- annotations[[set_name]]
-      log_info("Saving provided GRanges for: {set_name}")
-
-      if (any(width(tf_bindsites) < 400)) {
-        stop(sprintf(
-          "Some ranges in '%s' are too short (<400bp) to compute GC frequencies. Please ensure all ranges are at least 400bp long or adjust the width and try again.",
-          set_name
-        ))
-      }
-
-      tf_file <- file.path(outdir, paste0(set_name, "_tf_bindsites.rds"))
-      if (!file.exists(tf_file)) {
-        saveRDS(tf_bindsites, file = tf_file)
-        log_info("Saved annotation for {set_name}.")
-      }
-      tf_bindsites_list[[set_name]] <- tf_bindsites
-    }
   }
-  genome_gc_path <- file.path(outdir, paste0("genome_wide_GC_", assembly, ".rds"))
+  assembly <- unique(genome(genome))
+  genome_gc_path <- file.path(outdir, paste0("genomewide_GC_", assembly, ".rds"))
   if (!file.exists(genome_gc_path)) {
     # Compute the GC dist
     log_info("Computing GC dist for the genome ...")
