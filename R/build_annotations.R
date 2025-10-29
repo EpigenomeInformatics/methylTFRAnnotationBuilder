@@ -41,6 +41,7 @@ build_annotations <- function(annotations,annotations_name=NULL,
   }
   if(mode == "GRangesList") {
     tf_bindsites_list <- list()
+    annotations_name <- tolower(annotations_name)
     tf_bindsites_list[[annotations_name]] <- annotations
   }
   if (mode == "motifsets") {
