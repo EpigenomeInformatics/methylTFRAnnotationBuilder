@@ -47,6 +47,8 @@ build_annotations <- function(annotations,annotations_name=NULL,
   if (mode == "motifsets") {
     tf_bindsites_list <- list()
     for (set_name in annotations) {
+      tf_file <- file.path(outdir, paste0(set_name, "_tf_bindsites.rds"))
+      if (!file.exists(tf_file)) {
       log_info("Building annotation for motifset: {set_name}")
       if (is.character(genome)) {
         genome <- tolower(genome)
@@ -59,11 +61,15 @@ build_annotations <- function(annotations,annotations_name=NULL,
       tf_bindsites <- findTFBindSites(genome, prep$motifs, BPPARAM = BiocParallel::MulticoreParam(workers = cores))
       tf_bindsites_list[[set_name]] <- tf_bindsites
 
-      tf_file <- file.path(outdir, paste0(set_name, "_tf_bindsites.rds"))
-      if (!file.exists(tf_file)) {
+      
         log_info("Saving GRanges for: {set_name}")
         saveRDS(tf_bindsites, file = tf_file)
         log_info("Saved annotation for {set_name}.")
+      }else{
+        log_info("Loading existing annotation for motifset: {set_name}")
+        tf_bindsites <- readRDS(tf_file)
+        tf_bindsites_list[[set_name]] <- tf_bindsites
+        log_info("Loaded annotation for {set_name}.")
       }
     }
   }
@@ -79,10 +85,11 @@ build_annotations <- function(annotations,annotations_name=NULL,
     saveRDS(gc_genome, file = genome_gc_path)
   } else {
     log_info("GC dist for the genome already exists. Skipping computation.")
+    gc_genome <- readRDS(genome_gc_path)
   }
 
   # Compute the GC dist for the genome for TFBS usage
-  gc_dist <- calculate_gcdist(genome = genome, threads = cores)
+  gc_dist <- gc_genome$GC_bias
   gc_bin <- quantile(gc_dist, probs = seq(0, 1, 1 / 5))
 
 

@@ -202,26 +202,3 @@ findTFBindSites <- function(genome, motifs, BPPARAM = BiocParallel::bpparam()) {
   tf_binding_list <- GenomicRanges::GRangesList(tf_binding_list)
   return(tf_binding_list)
 }
-
-#' @title computeGCgenome_helper
-#' @description  compute GC content for a given chromosome
-#' @param genome The genome object to use
-#' @param chr The chromosome name
-#' @param chr_len The length of the chromosome
-#' @return A GRanges object with GC content values
-#' @keywords internal
-#' @import GenomicRanges Biostrings
-computeGCgenome_helper <- function(genome, chr, chr_len) {
-  qgr <- GRanges(
-    seqnames = chr,
-    ranges = IRanges(start = seq(1, chr_len[chr], 30), width = 30)
-  )
-  qgr <- qgr[-length(qgr)]
-  dna_seq <- getSeq(genome, qgr)
-  nucfreqs <- letterFrequency(dna_seq, c("A", "C", "G", "T"))
-  gc_tmp <- na.omit(rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs))
-  gcbin <- quantile(gc_tmp, probs = seq(0, 1, 1 / 5))
-  gcbin <- findInterval(gc_tmp, gc_bin, rightmost.closed = TRUE)
-  values(qgr) <- DataFrame(GC_bias = gc_tmp, GC_bin = gcbin)
-  return(qgr)
-}
