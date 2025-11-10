@@ -25,7 +25,7 @@ is a GRangesList, this parameter is mandatory.}
 
 \item{chunk_size}{Number of annotations to save per RDS (default: 10)}
 
-\item{genome}{Character genome assembly (e.g., "hg38") or BSgenome object}
+\item{genome}{BSgenome object}
 
 \item{cores}{Number of cores to use for parallel processing (default: 10)}
 

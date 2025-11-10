@@ -19,6 +19,7 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets =
     Author = "methylTFRAnnotationBuilder",
     Date = format(Sys.Date(), format = "%Y-%m-%d"),
     License = "Artistic-2.0",
+    Encoding = "UTF-8",
     Version = "0.1"
   )
 
@@ -46,7 +47,7 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets =
   writeLines(desc.lines, file.path(pkg.base.dir, "DESCRIPTION"))
 
   ## Create NAMESPACE file
-  writeLines(c(""), file.path(pkg.base.dir, "NAMESPACE"))
+  # writeLines(c(""), file.path(pkg.base.dir, "NAMESPACE"))
 
 
   ## Create R script files for your functions
@@ -60,7 +61,7 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets =
   writeLines(desc.lines, file.path(pkg.base.dir, "DESCRIPTION"))
 
   ## Create NAMESPACE file
-  writeLines(c(""), file.path(pkg.base.dir, "NAMESPACE"))
+  # writeLines(c(""), file.path(pkg.base.dir, "NAMESPACE"))
 
   ## Create R script files for your functions
   functions <- list(
@@ -72,9 +73,13 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets =
   for (func_name in names(functions)) {
     func_description <- functions[[func_name]]
 
+    # Define package name variable
+    pkg_name_var <- paste0(".PKG_NAME <- \"methylTFRAnnotation", assembly, "\"\n\n")
+
     # Define function-specific logic
     if (func_name == "getTFbindsites" || func_name == "getGCfreq") {
       r_script <- paste0(
+        pkg_name_var,
         "#' @title ", func_name, "\n",
         "#' @description ", func_description, "\n",
         "#' @param motifSet The motif set to use, default is \"", motifSets[1], "\", other options are ", paste0("\"", motifSets[-1], "\"", collapse = ", "), "\n",
@@ -91,6 +96,7 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets =
       )
     } else if (func_name == "getGenomeGC") {
       r_script <- paste0(
+        pkg_name_var,
         "#' @title ", func_name, "\n",
         "#' @description ", func_description, "\n",
         "#' @param assembly The genome assembly to use, no default value is set\n",
@@ -103,8 +109,8 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets =
         "}\n"
       )
     } else {
-      # Default case for other functions
       r_script <- paste0(
+        pkg_name_var,
         "#' @title ", func_name, "\n",
         "#' @description ", func_description, "\n",
         "#' @return \\code{GRangesList} object with score\n",

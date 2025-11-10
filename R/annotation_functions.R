@@ -123,8 +123,9 @@ computeGCgenome <- function(genome, cores = 1) {
   param$workers <- cores # Set the number of cores/workers
 
   # Use bplapply for parallel processing
-  t_qgr <- do.call(c, bplapply(chr_names, function(chr)
-   computeGCgenome_helper(genome, chr, chr_len), BPPARAM = param))
+  t_qgr <- do.call(c, bplapply(chr_names, function(chr) {
+    computeGCgenome_helper(genome, chr, chr_len)
+  }, BPPARAM = param))
   return(t_qgr)
 }
 
@@ -150,8 +151,10 @@ computeGCgenome_helper <- function(genome, chr, chr_len) {
   gcbin <- findInterval(gc_tmp, gcbin, rightmost.closed = TRUE)
   valid <- rowSums(nucfreqs) > 0 # valid mask
   starts_valid <- starts_all[valid]
-  qgr  <- GRanges(seqnames = chr,
-                   ranges = IRanges(start = starts_valid, width = 30))
+  qgr <- GRanges(
+    seqnames = chr,
+    ranges = IRanges(start = starts_valid, width = 30)
+  )
   values(qgr) <- DataFrame(GC_bias = gc_tmp, GC_bin = gcbin)
   return(qgr)
 }
