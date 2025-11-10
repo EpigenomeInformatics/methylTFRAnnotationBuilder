@@ -9,7 +9,6 @@ calculate_gcdist <- function(genome, threads = 1) {
   chr_len <- seqlengths(genome)
   chr_names <- names(chr_len)[1:24]
   gc_dist <- parallel::mclapply(chr_names, get_gcdist,
-    chr_len = chr_len,
     genome = genome,
     mc.cores = threads
   )
@@ -19,21 +18,18 @@ calculate_gcdist <- function(genome, threads = 1) {
 #' @title get_gcdist
 #' @description  get the GC distribution for a given chromosome
 #' @param chr The chromosome name
-#' @param chr_len The length of the chromosome
 #' @param genome The genome object to use
 #' @import GenomicRanges Biostrings
 #' @return GC content values for the chromosome
 #' @export
-get_gcdist <- function(chr, chr_len, genome) {
-  qgr <- GRanges(
-    seqnames = chr,
-    ranges = IRanges(start = seq(1, chr_len[chr], 30), width = 30)
-  )
-  # last interval might be out of chromosome length
-  qgr <- qgr[-length(qgr)]
-  dna_seq <- Biostrings::getSeq(genome, qgr)
+get_gcdist <- function(chr, genome) {
+  seq_set <- Biostrings::getSeq(genome, chr)
   # calculate GC content
-  nucfreqs <- Biostrings::letterFrequency(dna_seq, c("A", "C", "G", "T"))
+  nucfreqs <- Biostrings::letterFrequencyInSlidingView(
+    seq_set,
+    view.width = 30,
+    letters = c("A", "C", "G", "T")
+  )
   gc_tmp <- rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs)
   gc_tmp <- na.omit(gc_tmp)
 
@@ -127,7 +123,38 @@ computeGCgenome <- function(genome, cores = 1) {
   param$workers <- cores # Set the number of cores/workers
 
   # Use bplapply for parallel processing
-  t_qgr <- do.call(c, bplapply(chr_names, function(chr)
-   computeGCgenome_helper(genome, chr, chr_len), BPPARAM = param))
+  t_qgr <- do.call(c, bplapply(chr_names, function(chr) {
+    computeGCgenome_helper(genome, chr, chr_len)
+  }, BPPARAM = param))
   return(t_qgr)
+}
+
+#' @title computeGCgenome_helper
+#' @description  compute GC content for a given chromosome
+#' @param genome The genome object to use
+#' @param chr The chromosome name
+#' @param chr_len The length of the chromosome
+#' @return A GRanges object with GC content values
+#' @keywords internal
+#' @import GenomicRanges Biostrings
+computeGCgenome_helper <- function(genome, chr, chr_len) {
+  nwin_chr <- max(0, as.integer(chr_len[chr]) - 30 + 1)
+  starts_all <- if (nwin_chr > 0) seq(1, nwin_chr, by = 1) else integer(0)
+  seq_set <- Biostrings::getSeq(genome, chr)
+  nucfreqs <- Biostrings::letterFrequencyInSlidingView(
+    seq_set,
+    view.width = 30,
+    letters = c("A", "C", "G", "T")
+  )
+  gc_tmp <- na.omit(rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs))
+  gcbin <- quantile(gc_tmp, probs = seq(0, 1, 1 / 5))
+  gcbin <- findInterval(gc_tmp, gcbin, rightmost.closed = TRUE)
+  valid <- rowSums(nucfreqs) > 0 # valid mask
+  starts_valid <- starts_all[valid]
+  qgr <- GRanges(
+    seqnames = chr,
+    ranges = IRanges(start = starts_valid, width = 30)
+  )
+  values(qgr) <- DataFrame(GC_bias = gc_tmp, GC_bin = gcbin)
+  return(qgr)
 }

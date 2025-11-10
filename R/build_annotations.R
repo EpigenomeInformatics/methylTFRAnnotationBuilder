@@ -9,12 +9,13 @@
 #' @param cores Number of cores to use for parallel processing (default: 10)
 #' @param enhancer GRanges object for distal regions (default: NULL)
 #' @author Irem Gunduz
-#' @param genome Character genome assembly (e.g., "hg38") or BSgenome object
+#' @param genome BSgenome object
 #' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
 #' @export
 #' @return NULL
-build_annotations <- function(annotations,annotations_name=NULL,
- pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
+build_annotations <- function(
+    annotations, annotations_name = NULL,
+    pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
   outdir <- file.path(pkg.base.dir, "inst/extdata")
   if (!dir.exists(outdir)) {
     dir.create(outdir, recursive = TRUE)
@@ -34,36 +35,42 @@ build_annotations <- function(annotations,annotations_name=NULL,
     # Set the default number of cores to 1 if cores is not numeric
     cores <- 1
   }
-  if(mode == "GRangesList") {
-    if(is.null(annotations_name)) {
+  if (mode == "GRangesList") {
+    if (is.null(annotations_name)) {
       stop("annotations_name must be provided when annotations is a GRangesList.")
     }
   }
-  if(mode == "GRangesList") {
+  if (mode == "GRangesList") {
     tf_bindsites_list <- list()
-    annotations_name <- tolower(annotations_name)
+    annotations_name <- toupper(annotations_name)
     tf_bindsites_list[[annotations_name]] <- annotations
   }
   if (mode == "motifsets") {
     tf_bindsites_list <- list()
     for (set_name in annotations) {
-      log_info("Building annotation for motifset: {set_name}")
-      if (is.character(genome)) {
-        genome <- tolower(genome)
-      }
-
-      prep <- prepareMotifmatchr(genome, set_name)
-      assembly <- unique(GenomeInfoDb::genome(prep$genome))
-      genome <- prep$genome
-
-      tf_bindsites <- findTFBindSites(genome, prep$motifs, BPPARAM = BiocParallel::MulticoreParam(workers = cores))
-      tf_bindsites_list[[set_name]] <- tf_bindsites
-
       tf_file <- file.path(outdir, paste0(set_name, "_tf_bindsites.rds"))
       if (!file.exists(tf_file)) {
+        log_info("Building annotation for motifset: {set_name}")
+        if (is.character(genome)) {
+          genome <- tolower(genome)
+        }
+
+        prep <- prepareMotifmatchr(genome, set_name)
+        assembly <- unique(GenomeInfoDb::genome(prep$genome))
+        genome <- prep$genome
+
+        tf_bindsites <- findTFBindSites(genome, prep$motifs, BPPARAM = BiocParallel::MulticoreParam(workers = cores))
+        tf_bindsites_list[[set_name]] <- tf_bindsites
+
+
         log_info("Saving GRanges for: {set_name}")
         saveRDS(tf_bindsites, file = tf_file)
         log_info("Saved annotation for {set_name}.")
+      } else {
+        log_info("Loading existing annotation for motifset: {set_name}")
+        tf_bindsites <- readRDS(tf_file)
+        tf_bindsites_list[[set_name]] <- tf_bindsites
+        log_info("Loaded annotation for {set_name}.")
       }
     }
   }
@@ -79,10 +86,11 @@ build_annotations <- function(annotations,annotations_name=NULL,
     saveRDS(gc_genome, file = genome_gc_path)
   } else {
     log_info("GC dist for the genome already exists. Skipping computation.")
+    gc_genome <- readRDS(genome_gc_path)
   }
 
   # Compute the GC dist for the genome for TFBS usage
-  gc_dist <- calculate_gcdist(genome = genome, threads = cores)
+  gc_dist <- gc_genome$GC_bias
   gc_bin <- quantile(gc_dist, probs = seq(0, 1, 1 / 5))
 
 

@@ -4,12 +4,10 @@
 \alias{get_gcdist}
 \title{get_gcdist}
 \usage{
-get_gcdist(chr, chr_len, genome)
+get_gcdist(chr, genome)
 }
 \arguments{
 \item{chr}{The chromosome name}
-
-\item{chr_len}{The length of the chromosome}
 
 \item{genome}{The genome object to use}
 }
