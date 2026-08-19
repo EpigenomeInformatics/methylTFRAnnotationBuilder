@@ -11,7 +11,11 @@ build_annotations(
   chunk_size = 10,
   genome,
   cores = 10,
-  enhancer = NULL
+  enhancer = NULL,
+  keep_score = TRUE,
+  gc_sites = NULL,
+  tile_size = 5e+06,
+  bin_scope = c("chromosome", "genome")
 )
 }
 \arguments{
@@ -30,6 +34,21 @@ is a GRangesList, this parameter is mandatory.}
 \item{cores}{Number of cores to use for parallel processing (default: 10)}
 
 \item{enhancer}{GRanges object for distal regions (default: NULL)}
+
+\item{keep_score}{Retain the motif match score on each binding site.
+\code{methylTFR} never reads it; dropping it removes eight bytes per
+site from the stored object.}
+
+\item{gc_sites}{Optional \code{GRanges} restricting the genome-wide GC
+table to positions that can actually be queried, for example
+\code{cpgSites(genome)}. \code{NULL} keeps every genomic position,
+which produces an object of several hundred megabytes.}
+
+\item{tile_size}{Number of sliding windows scanned per tile when
+computing genome-wide GC content.}
+
+\item{bin_scope}{Whether GC bin boundaries are quantiles taken per
+chromosome (default, historical behaviour) or across the genome.}
 }
 \description{
 Build annotation RDS files from either motif set names or provided GRanges.

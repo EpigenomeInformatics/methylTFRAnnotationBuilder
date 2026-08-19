@@ -4,19 +4,24 @@
 \alias{computeGCgenome_helper}
 \title{computeGCgenome_helper}
 \usage{
-computeGCgenome_helper(genome, chr, chr_len)
+computeGCgenome_helper(genome, chr, chr_len, tile_size = 5e+06, sites = NULL)
 }
 \arguments{
-\item{genome}{The genome object to use}
+\item{genome}{A \code{BSgenome} object.}
 
-\item{chr}{The chromosome name}
+\item{chr}{Name of the sequence to scan.}
 
-\item{chr_len}{The length of the chromosome}
+\item{chr_len}{Named vector of sequence lengths.}
+
+\item{tile_size}{Number of windows scanned per tile.}
+
+\item{sites}{Optional \code{GRanges} restricting the output.}
 }
 \value{
-A GRanges object with GC content values
+A \code{GRanges} object with a \code{GC_bias} metadata column.
 }
 \description{
-compute GC content for a given chromosome
+Compute GC content in 30 nt sliding windows across one
+chromosome, tile by tile.
 }
 \keyword{internal}

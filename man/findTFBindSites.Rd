@@ -4,18 +4,49 @@
 \alias{findTFBindSites}
 \title{findTFBindSites}
 \usage{
-findTFBindSites(genome, motifs, BPPARAM = BiocParallel::bpparam())
+findTFBindSites(
+  genome,
+  motifs,
+  BPPARAM = BiocParallel::bpparam(),
+  keep_score = TRUE,
+  flank = 400,
+  chromosomes = NULL
+)
 }
 \arguments{
 \item{genome}{BSgenome object}
 
 \item{motifs}{PWMatrixList or PFMatrixList of motifs}
 
-\item{BPPARAM}{Parallel backend (default: automatically selected by bpparam())}
+\item{BPPARAM}{Parallel backend (default: automatically selected by
+\code{bpparam()})}
+
+\item{keep_score}{Retain the motif match score as a metadata column.
+\code{methylTFR} never reads it, and dropping it removes eight bytes
+per binding site from the stored object.}
+
+\item{flank}{Number of bases added to each motif width.}
+
+\item{chromosomes}{Character vector of sequences to scan. Defaults to
+the primary assembled chromosomes.}
 }
 \value{
 A GRangesList of binding sites for each motif
 }
 \description{
-Find TF binding sites from a genome and motif list (parallelized across chromosomes)
+Find TF binding sites for a set of motifs across a genome.
+}
+\details{
+Work is parallelised over chromosomes, and every motif is matched in a
+single \code{matchMotifs} call per chromosome. The previous
+implementation parallelised over motifs with the chromosome loop
+inside, so each worker held a full chromosome sequence at the same
+time and the sequence of every chromosome was re-read once per motif.
+For a 600 motif set that was roughly 14,400 sequence loads where 24
+suffice, with peak memory proportional to the number of workers.
+
+Binding sites are returned resized to \code{width + flank}. This width
+is load-bearing: \code{methylTFR::computeDeviation} widens the stored
+ranges by a further 130 bases and reads methylation across the result,
+so storing bare motif positions would silently narrow every footprint.
 }

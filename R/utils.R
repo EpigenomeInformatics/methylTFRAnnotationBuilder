@@ -139,66 +139,110 @@ getGenomeObject <- function(assembly, adjChrNames = TRUE) {
   return(res)
 }
 #' @title findTFBindSites
-#' @description Find TF binding sites from a genome and motif list (parallelized across chromosomes)
+#' @description Find TF binding sites for a set of motifs across a genome.
+#' @details
+#' Work is parallelised over chromosomes, and every motif is matched in a
+#' single \code{matchMotifs} call per chromosome. The previous
+#' implementation parallelised over motifs with the chromosome loop
+#' inside, so each worker held a full chromosome sequence at the same
+#' time and the sequence of every chromosome was re-read once per motif.
+#' For a 600 motif set that was roughly 14,400 sequence loads where 24
+#' suffice, with peak memory proportional to the number of workers.
+#'
+#' Binding sites are returned resized to \code{width + flank}. This width
+#' is load-bearing: \code{methylTFR::computeDeviation} widens the stored
+#' ranges by a further 130 bases and reads methylation across the result,
+#' so storing bare motif positions would silently narrow every footprint.
 #' @param genome BSgenome object
 #' @param motifs PWMatrixList or PFMatrixList of motifs
-#' @param BPPARAM Parallel backend (default: automatically selected by bpparam())
+#' @param BPPARAM Parallel backend (default: automatically selected by
+#' \code{bpparam()})
+#' @param keep_score Retain the motif match score as a metadata column.
+#' \code{methylTFR} never reads it, and dropping it removes eight bytes
+#' per binding site from the stored object.
+#' @param flank Number of bases added to each motif width.
+#' @param chromosomes Character vector of sequences to scan. Defaults to
+#' the primary assembled chromosomes.
 #' @return A GRangesList of binding sites for each motif
 #' @import GenomicRanges motifmatchr Biostrings BiocParallel
 #' @export
-findTFBindSites <- function(genome, motifs, BPPARAM = BiocParallel::bpparam()) {
-  if (!inherits(genome, "BSgenome")) {
-    stop("genome must be a BSgenome object.")
-  }
-  if (!inherits(motifs, "PWMatrixList") && !inherits(motifs, "PFMatrixList")) {
-    stop("motifs must be a PWMatrixList or PFMatrixList.")
-  }
-
-  # Filter for main chromosomes
-  all_seqnames <- GenomeInfoDb::seqnames(genome)
-  seqNames <- grep("^chr[0-9XY]+$", all_seqnames, value = TRUE)
-
-  tf_binding_list <- BiocParallel::bplapply(names(motifs), function(mo) {
-    binding_sites_motif <- list()
-
-    for (chr in seqNames) {
-      chr_seq <- Biostrings::getSeq(genome, chr)
-      motif_ix <- motifmatchr::matchMotifs(motifs[mo], chr_seq, out = "positions")
-      hits <- unlist(motif_ix[[mo]])
-      if (length(hits) == 0) next
-
-      strand <- mcols(hits)$strand
-      start_pos <- start(hits)
-      motif_width <- unique(width(hits))
-      if (length(motif_width) != 1) {
-        warning(sprintf("Multiple motif widths found for motif %s; using first width.", mo))
-        motif_width <- motif_width[1]
-      }
-
-      curr_motif <- GRanges(
-        seqnames = chr,
-        ranges = IRanges(start = start_pos, width = motif_width),
-        strand = strand
-      )
-
-      mcols(curr_motif)$score <- mcols(hits)$score
-      curr_motif <- resize(curr_motif, width = motif_width + 400, fix = "center")
-
-      # Store results for this chromosome
-      if (is.null(binding_sites_motif[[chr]])) {
-        binding_sites_motif[[chr]] <- curr_motif
-      } else {
-        binding_sites_motif[[chr]] <- c(binding_sites_motif[[chr]], curr_motif)
-      }
+findTFBindSites <- function(genome, motifs, BPPARAM = BiocParallel::bpparam(),
+    keep_score = TRUE, flank = 400, chromosomes = NULL) {
+    if (!inherits(genome, "BSgenome")) {
+        stop("genome must be a BSgenome object.")
+    }
+    if (!inherits(motifs, "PWMatrixList") && !inherits(motifs, "PFMatrixList")) {
+        stop("motifs must be a PWMatrixList or PFMatrixList.")
+    }
+    if (!is.logical(keep_score) || length(keep_score) != 1) {
+        stop("keep_score must be a single logical value.")
     }
 
-    # Combine results across chromosomes for this motif
-    Reduce(function(x, y) c(x, y), binding_sites_motif)
-  }, BPPARAM = BPPARAM)
+    motif_names <- names(motifs)
+    if (is.null(motif_names) || anyDuplicated(motif_names) > 0) {
+        stop("motifs must have unique names.")
+    }
 
-  # Convert list to named list by motif
-  names(tf_binding_list) <- names(motifs)
+    if (is.null(chromosomes)) {
+        all_seqnames <- GenomeInfoDb::seqnames(genome)
+        chromosomes <- grep("^chr[0-9XY]+$", all_seqnames, value = TRUE)
+    }
+    if (length(chromosomes) == 0) {
+        stop("No chromosomes selected; check the sequence names.")
+    }
 
-  tf_binding_list <- GenomicRanges::GRangesList(tf_binding_list)
-  return(tf_binding_list)
+    # One worker per chromosome. Every motif is matched in the same pass,
+    # so the sequence is read once rather than once per motif.
+    per_chr <- BiocParallel::bplapply(chromosomes, function(chr) {
+        chr_seq <- Biostrings::getSeq(genome, chr)
+        motif_ix <- motifmatchr::matchMotifs(motifs, chr_seq, out = "positions")
+
+        lapply(motif_names, function(mo) {
+            hits <- unlist(motif_ix[[mo]])
+            if (length(hits) == 0) {
+                return(NULL)
+            }
+            motif_width <- unique(width(hits))
+            if (length(motif_width) != 1) {
+                warning(sprintf(
+                    "Multiple motif widths found for motif %s; using the first.",
+                    mo
+                ))
+                motif_width <- motif_width[1]
+            }
+            gr <- GenomicRanges::GRanges(
+                seqnames = chr,
+                ranges = IRanges::IRanges(
+                    start = start(hits), width = motif_width
+                ),
+                strand = mcols(hits)$strand
+            )
+            if (keep_score) {
+                mcols(gr)$score <- mcols(hits)$score
+            }
+            GenomicRanges::resize(
+                gr,
+                width = motif_width + flank, fix = "center"
+            )
+        })
+    }, BPPARAM = BPPARAM)
+
+    # Collect each motif across chromosomes. A motif with no hits anywhere
+    # yields an empty GRanges rather than NULL, which previously produced
+    # a NULL element in the GRangesList.
+    tf_binding_list <- lapply(seq_along(motif_names), function(i) {
+        parts <- lapply(per_chr, function(x) x[[i]])
+        parts <- parts[!vapply(parts, is.null, logical(1))]
+        if (length(parts) == 0) {
+            empty <- GenomicRanges::GRanges()
+            if (keep_score) {
+                mcols(empty)$score <- numeric(0)
+            }
+            return(empty)
+        }
+        do.call(c, parts)
+    })
+    names(tf_binding_list) <- motif_names
+
+    GenomicRanges::GRangesList(tf_binding_list)
 }

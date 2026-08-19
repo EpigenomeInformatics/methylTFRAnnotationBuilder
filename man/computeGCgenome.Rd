@@ -4,16 +4,55 @@
 \alias{computeGCgenome}
 \title{computeGCgenome}
 \usage{
-computeGCgenome(genome, cores = 1)
+computeGCgenome(
+  genome,
+  cores = 1,
+  tile_size = 5e+06,
+  sites = NULL,
+  bin_scope = c("chromosome", "genome"),
+  chromosomes = NULL
+)
 }
 \arguments{
-\item{genome}{The genome object to use}
+\item{genome}{A \code{BSgenome} object.}
 
-\item{cores}{The number of cores to use for parallel processing}
+\item{cores}{Number of parallel workers.}
+
+\item{tile_size}{Number of windows scanned per tile.}
+
+\item{sites}{Optional \code{GRanges} restricting the output to
+windows starting at these positions, for example the result of
+\code{cpgSites}. \code{NULL} keeps every position, which produces a
+very large object.}
+
+\item{bin_scope}{Either "chromosome" (default, historical) or
+"genome".}
+
+\item{chromosomes}{Character vector of sequences to scan. Defaults to
+the first 24 sequences.}
 }
 \value{
-A GRanges object with GC content values for the entire genome
+A \code{GRanges} object with \code{GC_bias} and \code{GC_bin}
+metadata columns.
 }
 \description{
-compute GC content for the entire genome
+Compute GC content in 30 nt sliding windows and assign
+each window to one of five GC bins.
+}
+\details{
+The sliding-window scan is performed in tiles so that the intermediate
+nucleotide-frequency matrix never exceeds the size of one tile. The
+previous implementation scanned a whole chromosome in one call, which
+allocated an n-by-4 integer matrix of roughly four gigabytes for
+chr1, in every parallel worker simultaneously.
+
+Bin boundaries are quantiles of the observed GC distribution.
+\code{bin_scope} controls whether those quantiles are taken per
+chromosome, which is what earlier versions of this function did, or
+once across the whole genome. Genome-wide is the more defensible
+choice, because \code{build_annotations} derives the motif GC
+frequency tables from genome-wide quantiles; with per-chromosome bins
+the observed and expected sides of the deviation score are binned on
+different scales. The default preserves the historical behaviour so
+that existing annotation packages remain reproducible.
 }

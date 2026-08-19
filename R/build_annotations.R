@@ -8,6 +8,17 @@
 #' @param chunk_size Number of annotations to save per RDS (default: 10)
 #' @param cores Number of cores to use for parallel processing (default: 10)
 #' @param enhancer GRanges object for distal regions (default: NULL)
+#' @param keep_score Retain the motif match score on each binding site.
+#' \code{methylTFR} never reads it; dropping it removes eight bytes per
+#' site from the stored object.
+#' @param gc_sites Optional \code{GRanges} restricting the genome-wide GC
+#' table to positions that can actually be queried, for example
+#' \code{cpgSites(genome)}. \code{NULL} keeps every genomic position,
+#' which produces an object of several hundred megabytes.
+#' @param tile_size Number of sliding windows scanned per tile when
+#' computing genome-wide GC content.
+#' @param bin_scope Whether GC bin boundaries are quantiles taken per
+#' chromosome (default, historical behaviour) or across the genome.
 #' @author Irem Gunduz
 #' @param genome BSgenome object
 #' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
@@ -15,7 +26,10 @@
 #' @return NULL
 build_annotations <- function(
     annotations, annotations_name = NULL,
-    pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
+    pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL,
+    keep_score = TRUE, gc_sites = NULL, tile_size = 5e6,
+    bin_scope = c("chromosome", "genome")) {
+  bin_scope <- match.arg(bin_scope)
   outdir <- file.path(pkg.base.dir, "inst/extdata")
   if (!dir.exists(outdir)) {
     dir.create(outdir, recursive = TRUE)
@@ -42,12 +56,12 @@ build_annotations <- function(
   }
   if (mode == "GRangesList") {
     tf_bindsites_list <- list()
-    annotations_name <- toupper(annotations_name)
+    annotations_name <- tolower(annotations_name)
     tf_bindsites_list[[annotations_name]] <- annotations
   }
   if (mode == "motifsets") {
     tf_bindsites_list <- list()
-    for (set_name in annotations) {
+    for (set_name in tolower(annotations)) {
       tf_file <- file.path(outdir, paste0(set_name, "_tf_bindsites.rds"))
       if (!file.exists(tf_file)) {
         log_info("Building annotation for motifset: {set_name}")
@@ -59,7 +73,10 @@ build_annotations <- function(
         assembly <- unique(GenomeInfoDb::genome(prep$genome))
         genome <- prep$genome
 
-        tf_bindsites <- findTFBindSites(genome, prep$motifs, BPPARAM = BiocParallel::MulticoreParam(workers = cores))
+        tf_bindsites <- findTFBindSites(genome, prep$motifs,
+          BPPARAM = BiocParallel::MulticoreParam(workers = cores),
+          keep_score = keep_score
+        )
         tf_bindsites_list[[set_name]] <- tf_bindsites
 
 
@@ -79,7 +96,10 @@ build_annotations <- function(
   if (!file.exists(genome_gc_path)) {
     # Compute the GC dist
     log_info("Computing GC dist for the genome ...")
-    gc_genome <- computeGCgenome(genome = genome, cores = cores)
+    gc_genome <- computeGCgenome(
+      genome = genome, cores = cores, tile_size = tile_size,
+      sites = gc_sites, bin_scope = bin_scope
+    )
 
     # Save the GC dist
     log_info("Saving GC dist for the genome ...")
@@ -97,9 +117,13 @@ build_annotations <- function(
   for (set_name in names(tf_bindsites_list)) {
     tf_bindsites <- tf_bindsites_list[[set_name]]
     if (!is.null(enhancer)) {
-      merged_file <- file.path(outdir, paste0(set_name, "_distal_motif_gcfreq.rds"))
+      merged_file <- file.path(
+        outdir, paste0(tolower(set_name), "_distal_motif_gcfreq.rds")
+      )
     } else {
-      merged_file <- file.path(outdir, paste0(set_name, "_motif_gcfreq.rds"))
+      merged_file <- file.path(
+        outdir, paste0(tolower(set_name), "_motif_gcfreq.rds")
+      )
     }
 
     if (!file.exists(merged_file)) {

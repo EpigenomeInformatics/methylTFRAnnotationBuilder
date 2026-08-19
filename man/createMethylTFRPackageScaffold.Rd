@@ -7,7 +7,8 @@
 createMethylTFRPackageScaffold(
   assembly,
   dest = getwd(),
-  motifSets = c("JASPAR2020")
+  motifSets = c("JASPAR2020"),
+  version = "0.99.0"
 )
 }
 \arguments{
@@ -16,6 +17,8 @@ createMethylTFRPackageScaffold(
 \item{dest}{Destination directory where the package should be created.}
 
 \item{motifSets}{a character vector of motif sets to be included in the package.}
+
+\item{version}{Version string for the generated package.}
 }
 \value{
 Invisibly, \code{TRUE} if the package directory and its \code{DESCRIPTION} file were successfully created;
@@ -24,8 +27,25 @@ Invisibly, \code{TRUE} if the package directory and its \code{DESCRIPTION} file 
 \description{
 Creates a scaffold folder structure for a methylTFR annotation package.
 }
+\details{
+The generated accessors validate their argument against the motif sets
+the package was actually built with. Earlier versions wrote a check
+against \code{motifSets}, a variable that exists only while the
+scaffold is being generated and is undefined inside the finished
+package, so the generated accessor failed at run time. The valid
+names are now written into the generated file as a literal.
+
+File names are normalised to lower case on both sides, here and in
+\code{build_annotations}. Previously the accessor upper-cased the
+motif set before building the file name while \code{build_annotations}
+wrote the name as supplied, so any set whose name was not already
+upper case resolved to a missing file and failed inside
+\code{readRDS("")}.
+}
 \examples{
-createMethylTFRPackageScaffold("hg38")
+\donttest{
+createMethylTFRPackageScaffold("hg38", dest = tempdir())
+}
 }
 \author{
 methylTFR Authors

@@ -72,7 +72,7 @@ convert_to_bins <- function(x, gc_bin) {
 convert_to_matrix <- function(bins) {
   mat <- matrix(0, 5, dim(bins)[1])
   bins <- na.omit(bins)
-  mat[cbind(bins[, 2], bins[, 1])] <- 1
+  mat[base::cbind(bins[, 2], bins[, 1])] <- 1
   return(mat)
 }
 
@@ -89,7 +89,7 @@ convert_to_matrix <- function(bins) {
 #' @export
 processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites, enhancer = NULL) {
   tfbs <- tf_bindsites[[motif]]
-  tfbs <- resize(tfbs, width(tfbs)[1] + 130, fix = "center")
+  tfbs <- resize(tfbs, width(tfbs) + 130, fix = "center")
   if (!is.null(enhancer)) {
     tfbs <- subsetByOverlaps(tfbs, enhancer, ignore.strand = T)
   }
@@ -106,55 +106,206 @@ processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites, enhancer =
   return(normalized_matrix)
 }
 
-#' @title computeGCgenome
-#' @description  compute GC content for the entire genome
-#' @param genome The genome object to use
-#' @param cores The number of cores to use for parallel processing
-#' @return A GRanges object with GC content values for the entire genome
+#' @title cpgSites
+#' @description Locate every CpG dinucleotide in a genome, as a
+#' \code{GRanges} of single-base positions marking the cytosine.
+#' @details Supplying the result as the \code{sites} argument of
+#' \code{computeGCgenome} restricts the GC table to positions a CpG
+#' methylome can actually query. \code{methylTFR} reads the table only
+#' through \code{findOverlaps(msites, gcdist)}, so windows that overlap
+#' no methylation call are never used. For CpG data this is lossless and
+#' reduces the table by roughly two orders of magnitude.
+#' @param genome A \code{BSgenome} object.
+#' @param chromosomes Character vector of sequences to scan. Defaults to
+#' the first 24 sequences, matching the rest of the builder.
+#' @return A \code{GRanges} of width-1 ranges, one per CpG.
 #' @import GenomicRanges Biostrings
 #' @export
-#' @importFrom BiocParallel bplapply
-computeGCgenome <- function(genome, cores = 1) {
-  chr_len <- seqlengths(genome)
-  chr_names <- names(chr_len)[1:24]
-
-  # Automatically select the parallel backend
-  param <- bpparam()
-  param$workers <- cores # Set the number of cores/workers
-
-  # Use bplapply for parallel processing
-  t_qgr <- do.call(c, bplapply(chr_names, function(chr) {
-    computeGCgenome_helper(genome, chr, chr_len)
-  }, BPPARAM = param))
-  return(t_qgr)
+cpgSites <- function(genome, chromosomes = NULL) {
+    if (!inherits(genome, "BSgenome")) {
+        stop("genome must be a BSgenome object.")
+    }
+    if (is.null(chromosomes)) {
+        chromosomes <- names(GenomeInfoDb::seqlengths(genome))[seq_len(24)]
+    }
+    res <- lapply(chromosomes, function(chr) {
+        hits <- Biostrings::matchPattern(
+            "CG", Biostrings::getSeq(genome, chr)
+        )
+        GenomicRanges::GRanges(
+            seqnames = chr,
+            ranges = IRanges::IRanges(start = start(hits), width = 1L)
+        )
+    })
+    do.call(c, res)
 }
 
-#' @title computeGCgenome_helper
-#' @description  compute GC content for a given chromosome
-#' @param genome The genome object to use
-#' @param chr The chromosome name
-#' @param chr_len The length of the chromosome
-#' @return A GRanges object with GC content values
-#' @keywords internal
+
+#' @title computeGCgenome
+#' @description Compute GC content in 30 nt sliding windows and assign
+#' each window to one of five GC bins.
+#' @details
+#' The sliding-window scan is performed in tiles so that the intermediate
+#' nucleotide-frequency matrix never exceeds the size of one tile. The
+#' previous implementation scanned a whole chromosome in one call, which
+#' allocated an n-by-4 integer matrix of roughly four gigabytes for
+#' chr1, in every parallel worker simultaneously.
+#'
+#' Bin boundaries are quantiles of the observed GC distribution.
+#' \code{bin_scope} controls whether those quantiles are taken per
+#' chromosome, which is what earlier versions of this function did, or
+#' once across the whole genome. Genome-wide is the more defensible
+#' choice, because \code{build_annotations} derives the motif GC
+#' frequency tables from genome-wide quantiles; with per-chromosome bins
+#' the observed and expected sides of the deviation score are binned on
+#' different scales. The default preserves the historical behaviour so
+#' that existing annotation packages remain reproducible.
+#' @param genome A \code{BSgenome} object.
+#' @param cores Number of parallel workers.
+#' @param tile_size Number of windows scanned per tile.
+#' @param sites Optional \code{GRanges} restricting the output to
+#' windows starting at these positions, for example the result of
+#' \code{cpgSites}. \code{NULL} keeps every position, which produces a
+#' very large object.
+#' @param bin_scope Either "chromosome" (default, historical) or
+#' "genome".
+#' @param chromosomes Character vector of sequences to scan. Defaults to
+#' the first 24 sequences.
+#' @return A \code{GRanges} object with \code{GC_bias} and \code{GC_bin}
+#' metadata columns.
 #' @import GenomicRanges Biostrings
-computeGCgenome_helper <- function(genome, chr, chr_len) {
-  nwin_chr <- max(0, as.integer(chr_len[chr]) - 30 + 1)
-  starts_all <- if (nwin_chr > 0) seq(1, nwin_chr, by = 1) else integer(0)
-  seq_set <- Biostrings::getSeq(genome, chr)
-  nucfreqs <- Biostrings::letterFrequencyInSlidingView(
-    seq_set,
-    view.width = 30,
-    letters = c("A", "C", "G", "T")
-  )
-  gc_tmp <- na.omit(rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs))
-  gcbin <- quantile(gc_tmp, probs = seq(0, 1, 1 / 5))
-  gcbin <- findInterval(gc_tmp, gcbin, rightmost.closed = TRUE)
-  valid <- rowSums(nucfreqs) > 0 # valid mask
-  starts_valid <- starts_all[valid]
-  qgr <- GRanges(
-    seqnames = chr,
-    ranges = IRanges(start = starts_valid, width = 30)
-  )
-  values(qgr) <- DataFrame(GC_bias = gc_tmp, GC_bin = gcbin)
-  return(qgr)
+#' @importFrom BiocParallel bplapply MulticoreParam
+#' @importFrom stats quantile
+#' @export
+computeGCgenome <- function(genome, cores = 1, tile_size = 5e6,
+    sites = NULL, bin_scope = c("chromosome", "genome"),
+    chromosomes = NULL) {
+    bin_scope <- match.arg(bin_scope)
+    if (!inherits(genome, "BSgenome")) {
+        stop("genome must be a BSgenome object.")
+    }
+    if (!is.null(sites) && !inherits(sites, "GRanges")) {
+        stop("sites must be NULL or a GRanges object.")
+    }
+    chr_len <- GenomeInfoDb::seqlengths(genome)
+    if (is.null(chromosomes)) {
+        chromosomes <- names(chr_len)[seq_len(24)]
+    }
+
+    # One worker per chromosome. Each holds at most one tile of sequence
+    # plus its own share of the output, rather than a whole chromosome.
+    param <- BiocParallel::MulticoreParam(workers = max(1L, as.integer(cores)))
+
+    per_chr <- BiocParallel::bplapply(chromosomes, function(chr) {
+        computeGCgenome_helper(
+            genome = genome, chr = chr, chr_len = chr_len,
+            tile_size = tile_size, sites = sites
+        )
+    }, BPPARAM = param)
+
+    per_chr <- per_chr[vapply(per_chr, length, integer(1)) > 0]
+    if (length(per_chr) == 0) {
+        stop("No GC windows were produced; check the chromosome names.")
+    }
+
+    if (bin_scope == "chromosome") {
+        per_chr <- lapply(per_chr, function(gr) {
+            gr$GC_bin <- assign_gc_bins(gr$GC_bias)
+            gr
+        })
+        return(do.call(c, per_chr))
+    }
+
+    res <- do.call(c, per_chr)
+    res$GC_bin <- assign_gc_bins(res$GC_bias)
+    return(res)
+}
+
+
+#' @title assign_gc_bins
+#' @description Assign GC values to five bins delimited by their own
+#' quantiles.
+#' @param gc Numeric vector of GC fractions.
+#' @return An integer vector of bin indices.
+#' @importFrom stats quantile
+#' @keywords internal
+assign_gc_bins <- function(gc) {
+    breaks <- stats::quantile(gc, probs = seq(0, 1, 1 / 5), na.rm = TRUE)
+    findInterval(gc, breaks, rightmost.closed = TRUE)
+}
+
+
+#' @title computeGCgenome_helper
+#' @description Compute GC content in 30 nt sliding windows across one
+#' chromosome, tile by tile.
+#' @param genome A \code{BSgenome} object.
+#' @param chr Name of the sequence to scan.
+#' @param chr_len Named vector of sequence lengths.
+#' @param tile_size Number of windows scanned per tile.
+#' @param sites Optional \code{GRanges} restricting the output.
+#' @return A \code{GRanges} object with a \code{GC_bias} metadata column.
+#' @import GenomicRanges Biostrings
+#' @keywords internal
+computeGCgenome_helper <- function(genome, chr, chr_len, tile_size = 5e6,
+    sites = NULL) {
+    win <- 30L
+    nwin <- max(0L, as.integer(chr_len[chr]) - win + 1L)
+    if (nwin == 0L) {
+        return(GenomicRanges::GRanges())
+    }
+
+    keep_starts <- NULL
+    if (!is.null(sites)) {
+        on_chr <- sites[as.character(GenomicRanges::seqnames(sites)) == chr]
+        if (length(on_chr) == 0) {
+            return(GenomicRanges::GRanges())
+        }
+        keep_starts <- sort(unique(GenomicRanges::start(on_chr)))
+        keep_starts <- keep_starts[keep_starts >= 1L & keep_starts <= nwin]
+        if (length(keep_starts) == 0) {
+            return(GenomicRanges::GRanges())
+        }
+    }
+
+    tile_size <- max(1L, as.integer(tile_size))
+    tile_from <- seq.int(1L, nwin, by = tile_size)
+
+    pieces <- lapply(tile_from, function(from) {
+        to <- min(from + tile_size - 1L, nwin)
+        # A window starting at `to` ends at `to + win - 1`, so the
+        # sequence slice has to run that far.
+        tile_seq <- Biostrings::getSeq(
+            genome, chr,
+            start = from, end = min(to + win - 1L, as.integer(chr_len[chr]))
+        )
+        if (length(tile_seq) < win) {
+            return(NULL)
+        }
+        nucfreqs <- Biostrings::letterFrequencyInSlidingView(
+            tile_seq,
+            view.width = win, letters = c("A", "C", "G", "T")
+        )
+        totals <- rowSums(nucfreqs)
+        starts <- seq.int(from, length.out = nrow(nucfreqs))
+        valid <- totals > 0
+        if (!is.null(keep_starts)) {
+            valid <- valid & starts %in% keep_starts
+        }
+        if (!any(valid)) {
+            return(NULL)
+        }
+        gc <- rowSums(nucfreqs[valid, 2:3, drop = FALSE]) / totals[valid]
+        gr <- GenomicRanges::GRanges(
+            seqnames = chr,
+            ranges = IRanges::IRanges(start = starts[valid], width = win)
+        )
+        gr$GC_bias <- gc
+        gr
+    })
+
+    pieces <- pieces[!vapply(pieces, is.null, logical(1))]
+    if (length(pieces) == 0) {
+        return(GenomicRanges::GRanges())
+    }
+    do.call(c, pieces)
 }

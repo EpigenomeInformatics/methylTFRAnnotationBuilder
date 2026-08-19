@@ -1,145 +1,178 @@
 #' @title createMethylTFRPackageScaffold
 #' @description Creates a scaffold folder structure for a methylTFR annotation package.
+#' @details
+#' The generated accessors validate their argument against the motif sets
+#' the package was actually built with. Earlier versions wrote a check
+#' against \code{motifSets}, a variable that exists only while the
+#' scaffold is being generated and is undefined inside the finished
+#' package, so the generated accessor failed at run time. The valid
+#' names are now written into the generated file as a literal.
+#'
+#' File names are normalised to lower case on both sides, here and in
+#' \code{build_annotations}. Previously the accessor upper-cased the
+#' motif set before building the file name while \code{build_annotations}
+#' wrote the name as supplied, so any set whose name was not already
+#' upper case resolved to a missing file and failed inside
+#' \code{readRDS("")}.
 #' @param assembly The genome assembly, e.g., "hg38".
 #' @param dest     Destination directory where the package should be created.
 #' @param motifSets a character vector of motif sets to be included in the package.
+#' @param version Version string for the generated package.
 #' @return Invisibly, \code{TRUE} if the package directory and its \code{DESCRIPTION} file were successfully created;
 #'         \code{FALSE} otherwise.
 #' @author methylTFR Authors
 #' Inspired by \code{createPackageScaffold} from the \code{RnBeadsAnnotationCreator} package.
 #' @examples
-#' createMethylTFRPackageScaffold("hg38")
+#' \donttest{
+#' createMethylTFRPackageScaffold("hg38", dest = tempdir())
+#' }
 #' @export
-createMethylTFRPackageScaffold <- function(assembly, dest = getwd(), motifSets = c("JASPAR2020")) {
-  pkg.name <- paste0("methylTFRAnnotation", assembly)
-  desc <- c(
-    Package = pkg.name,
-    Title = paste("methylTFR Annotations for", assembly),
-    Description = "methylTFR annotation package",
-    Author = "methylTFRAnnotationBuilder",
-    Date = format(Sys.Date(), format = "%Y-%m-%d"),
-    License = "Artistic-2.0",
-    Encoding = "UTF-8",
-    Version = "0.1"
-  )
+createMethylTFRPackageScaffold <- function(assembly, dest = getwd(),
+    motifSets = c("JASPAR2020"), version = "0.99.0") {
+    pkg.name <- paste0("methylTFRAnnotation", assembly)
+    motifSets <- tolower(motifSets)
+    if (length(motifSets) == 0 || anyDuplicated(motifSets) > 0) {
+        stop("motifSets must be a non-empty vector of unique names.")
+    }
 
-  pkg.base.dir <- file.path(dest, pkg.name)
-  if (dir.exists(pkg.base.dir)) {
-    stop("Package directory already exists")
-  } else {
+    desc <- c(
+        Package = pkg.name,
+        Title = paste("methylTFR Annotations for", assembly),
+        Description = paste(
+            "Precomputed transcription factor binding sites, motif GC",
+            "frequency tables and a genome-wide GC distribution for use",
+            "with the methylTFR package."
+        ),
+        Author = "methylTFRAnnotationBuilder",
+        Maintainer = "Irem B. Gunduz <irembgunduz@gmail.com>",
+        Date = format(Sys.Date(), format = "%Y-%m-%d"),
+        License = "Artistic-2.0",
+        Encoding = "UTF-8",
+        Version = version,
+        Depends = "R (>= 4.4.0)",
+        Imports = "GenomicRanges",
+        biocViews = "AnnotationData, Genome, Homo_sapiens",
+        RoxygenNote = "7.3.2"
+    )
+
+    pkg.base.dir <- file.path(dest, pkg.name)
+    if (dir.exists(pkg.base.dir)) {
+        stop("Package directory already exists")
+    }
     dir.create(pkg.base.dir)
-  }
 
-  ## Create the folder structure
-  for (dname in c("R", "inst", "man", "temp")) {
-    if (!dir.create(file.path(pkg.base.dir, dname), showWarnings = FALSE, recursive = TRUE)) {
-      return(invisible(FALSE))
+    ## Create the folder structure
+    for (dname in c("R", "inst", "man", "temp")) {
+        if (!dir.create(file.path(pkg.base.dir, dname),
+            showWarnings = FALSE, recursive = TRUE
+        )) {
+            return(invisible(FALSE))
+        }
     }
-  }
-
-  # Create the extdata folder within the inst directory
-  if (!dir.create(file.path(pkg.base.dir, "inst", "extdata"), showWarnings = FALSE, recursive = TRUE)) {
-    return(invisible(FALSE))
-  }
-
-  ## Create DESCRIPTION file
-  desc.lines <- paste(names(desc), desc, sep = ": ")
-  writeLines(desc.lines, file.path(pkg.base.dir, "DESCRIPTION"))
-
-  ## Create NAMESPACE file
-  # writeLines(c(""), file.path(pkg.base.dir, "NAMESPACE"))
-
-
-  ## Create R script files for your functions
-  functions <- list(
-    getTFbindsites = "Retrieve Transcription Factor Binding sites (TFBS) annotation stored in this package",
-    getGCfreq = "Load the GC frequency table stored in this package",
-    getGenomeGC = "Load the genome-wide GC calculation annotation stored in this package"
-  )
-
-
-  writeLines(desc.lines, file.path(pkg.base.dir, "DESCRIPTION"))
-
-  ## Create NAMESPACE file
-  # writeLines(c(""), file.path(pkg.base.dir, "NAMESPACE"))
-
-  ## Create R script files for your functions
-  functions <- list(
-    getTFbindsites = "Retrieve Transcription Factor Binding sites (TFBS) annotation stored in this package",
-    getGCfreq = "Load the GC frequency table stored in this package",
-    getGenomeGC = "Load the genome-wide GC calculation annotation stored in this package"
-  )
-
-  for (func_name in names(functions)) {
-    func_description <- functions[[func_name]]
-
-    # Define package name variable
-    pkg_name_var <- paste0(".PKG_NAME <- \"methylTFRAnnotation", assembly, "\"\n\n")
-
-    # Define function-specific logic
-    if (func_name == "getTFbindsites" || func_name == "getGCfreq") {
-      r_script <- paste0(
-        pkg_name_var,
-        "#' @title ", func_name, "\n",
-        "#' @description ", func_description, "\n",
-        "#' @param motifSet The motif set to use, default is \"", motifSets[1], "\", other options are ", paste0("\"", motifSets[-1], "\"", collapse = ", "), "\n",
-        "#' @return \\code{GRangesList} object with score\n",
-        "#' @export \n",
-        func_name, " <- function(motifSet = \"", motifSets[1], "\"){\n",
-        "  if(!tolower(motifSet) %in% tolower(motifSets)){\n",
-        "    stop(\"Invalid motif set, please use one of the following: \", paste(motifSets, collapse = \", \"))\n",
-        "  }\n",
-        "  motifSet <- tolower(motifSet)\n",
-        "  res <- readRDS(system.file(\"extdata\", paste0(motifSet, \"_", ifelse(func_name == "getTFbindsites", "tf_bindsites", "motif_gcfreq"), "\", \".rds\"), package=.PKG_NAME))\n",
-        "  return(res)\n",
-        "}\n"
-      )
-    } else if (func_name == "getGenomeGC") {
-      r_script <- paste0(
-        pkg_name_var,
-        "#' @title ", func_name, "\n",
-        "#' @description ", func_description, "\n",
-        "#' @param assembly The genome assembly to use, no default value is set\n",
-        "#' @return \\code{GRangesList} object with score\n",
-        "#' @export \n",
-        func_name, " <- function(assembly){\n",
-        "  assembly <- tolower(assembly)\n",
-        "  res <- readRDS(system.file(\"extdata\", paste0(\"genomewide_GC_\", assembly, \".rds\"), package=.PKG_NAME))\n",
-        "  return(res)\n",
-        "}\n"
-      )
-    } else {
-      r_script <- paste0(
-        pkg_name_var,
-        "#' @title ", func_name, "\n",
-        "#' @description ", func_description, "\n",
-        "#' @return \\code{GRangesList} object with score\n",
-        "#' @export \n",
-        func_name, " <- function(){\n",
-        "  res <- readRDS(system.file(\"extdata\", paste0(\"", tolower(func_name), "\", \".rds\"), package=.PKG_NAME))\n",
-        "  return(res)\n",
-        "}\n"
-      )
+    if (!dir.create(file.path(pkg.base.dir, "inst", "extdata"),
+        showWarnings = FALSE, recursive = TRUE
+    )) {
+        return(invisible(FALSE))
     }
 
-    # Write the script to the appropriate file
-    r_file <- paste0(pkg.base.dir, "/R/", func_name, ".R")
-    writeLines(r_script, r_file)
-  }
+    ## DESCRIPTION
+    desc.lines <- paste(names(desc), desc, sep = ": ")
+    writeLines(desc.lines, file.path(pkg.base.dir, "DESCRIPTION"))
 
-  # Generate Roxygen documentation using roxygen2::roxygenise
-  roxygen2::roxygenise(pkg.base.dir)
+    ## Shared header: package name and the motif sets that were built,
+    ## written as literals so the finished package does not depend on
+    ## anything from the generating session.
+    header <- paste0(
+        '.PKG_NAME <- "', pkg.name, '"\n',
+        ".MOTIF_SETS <- c(",
+        paste0('"', motifSets, '"', collapse = ", "), ")\n",
+        '.ASSEMBLY <- "', tolower(assembly), '"\n\n',
+        "#' @keywords internal\n",
+        ".resolve_extdata <- function(file) {\n",
+        '    path <- system.file("extdata", file, package = .PKG_NAME)\n',
+        '    if (!nzchar(path)) {\n',
+        '        stop("Annotation file not found in ", .PKG_NAME, ": ", file)\n',
+        "    }\n",
+        "    path\n",
+        "}\n\n",
+        "#' @keywords internal\n",
+        ".check_motif_set <- function(motifSet) {\n",
+        "    motifSet <- tolower(motifSet)\n",
+        "    if (length(motifSet) != 1 || !motifSet %in% .MOTIF_SETS) {\n",
+        '        stop("Invalid motif set. Available: ",\n',
+        '            paste(.MOTIF_SETS, collapse = ", "))\n',
+        "    }\n",
+        "    motifSet\n",
+        "}\n"
+    )
 
-  ## Create NEWS file
-  fname <- system.file(paste0("extdata/NEWS.", assembly), package = "methylTFRAnnotationCreator")
-  if (file.exists(fname)) {
-    txt <- scan(fname, "", sep = "\n", na.strings = character(), quiet = TRUE, blank.lines.skip = FALSE)
-  } else {
-    txt <- paste0("methylTFRAnnotations", assembly, " ", desc["Version"])
+    accessor <- function(fun, suffix, description) {
+        paste0(
+            "#' @title ", fun, "\n",
+            "#' @description ", description, "\n",
+            "#' @param motifSet Motif set to load. One of: ",
+            paste(motifSets, collapse = ", "), ".\n",
+            "#' @return The stored annotation object.\n",
+            "#' @export\n",
+            fun, ' <- function(motifSet = "', motifSets[1], '") {\n',
+            "    motifSet <- .check_motif_set(motifSet)\n",
+            '    readRDS(.resolve_extdata(paste0(motifSet, "_', suffix,
+            '.rds")))\n',
+            "}\n"
+        )
+    }
+
+    scripts <- list(
+        getTFbindsites = accessor(
+            "getTFbindsites", "tf_bindsites",
+            paste(
+                "Retrieve transcription factor binding sites stored in",
+                "this package."
+            )
+        ),
+        getGCfreq = accessor(
+            "getGCfreq", "motif_gcfreq",
+            paste(
+                "Load the motif GC frequency table stored in this",
+                "package."
+            )
+        ),
+        getGenomeGC = paste0(
+            "#' @title getGenomeGC\n",
+            "#' @description Load the genome-wide GC distribution stored",
+            " in this package.\n",
+            "#' @param assembly Genome assembly. Defaults to the",
+            " assembly this package was built for.\n",
+            "#' @return A \\code{GRanges} object with GC_bias and GC_bin.\n",
+            "#' @export\n",
+            "getGenomeGC <- function(assembly = .ASSEMBLY) {\n",
+            "    assembly <- tolower(assembly)\n",
+            '    readRDS(.resolve_extdata(paste0("genomewide_GC_",\n',
+            '        assembly, ".rds")))\n',
+            "}\n"
+        )
+    )
+
+    # Shared constants and helpers live in one file rather than being
+    # repeated in each accessor.
+    writeLines(header, file.path(pkg.base.dir, "R", "aaa-utils.R"))
+    for (fun in names(scripts)) {
+        writeLines(
+            scripts[[fun]],
+            file.path(pkg.base.dir, "R", paste0(fun, ".R"))
+        )
+    }
+
+    ## Generate documentation and NAMESPACE
+    roxygen2::roxygenise(pkg.base.dir)
+
+    ## NEWS
+    txt <- paste0("methylTFRAnnotation", assembly, " ", desc[["Version"]])
     txt <- c(txt, paste(rep("=", nchar(txt)), collapse = ""))
-    txt <- c(txt, "", paste0("* Initial release of methylTFRAnnotations", assembly, "."))
-  }
-  cat(txt, file = paste0(pkg.base.dir, "/NEWS.md"), sep = "\n")
+    txt <- c(txt, "", paste0(
+        "* Initial release of methylTFRAnnotation", assembly, "."
+    ))
+    cat(txt, file = file.path(pkg.base.dir, "NEWS.md"), sep = "\n")
 
-  invisible(TRUE)
+    invisible(TRUE)
 }
