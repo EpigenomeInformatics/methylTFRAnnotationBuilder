@@ -15,7 +15,7 @@ build_annotations(
   keep_score = TRUE,
   gc_sites = NULL,
   tile_size = 5e+06,
-  bin_scope = c("chromosome", "genome")
+  bin_scope = c("genome", "chromosome")
 )
 }
 \arguments{
@@ -47,8 +47,9 @@ which produces an object of several hundred megabytes.}
 \item{tile_size}{Number of sliding windows scanned per tile when
 computing genome-wide GC content.}
 
-\item{bin_scope}{Whether GC bin boundaries are quantiles taken per
-chromosome (default, historical behaviour) or across the genome.}
+\item{bin_scope}{Whether GC bin boundaries are quantiles taken across
+the genome (default) or per chromosome. Genome scope matches the
+quantiles used for the motif GC frequency tables below.}
 }
 \description{
 Build annotation RDS files from either motif set names or provided GRanges.

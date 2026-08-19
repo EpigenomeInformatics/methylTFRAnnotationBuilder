@@ -152,14 +152,14 @@ cpgSites <- function(genome, chromosomes = NULL) {
 #' chr1, in every parallel worker simultaneously.
 #'
 #' Bin boundaries are quantiles of the observed GC distribution.
-#' \code{bin_scope} controls whether those quantiles are taken per
-#' chromosome, which is what earlier versions of this function did, or
-#' once across the whole genome. Genome-wide is the more defensible
-#' choice, because \code{build_annotations} derives the motif GC
-#' frequency tables from genome-wide quantiles; with per-chromosome bins
-#' the observed and expected sides of the deviation score are binned on
-#' different scales. The default preserves the historical behaviour so
-#' that existing annotation packages remain reproducible.
+#' \code{bin_scope} controls whether those quantiles are taken once
+#' across the genome, the default, or per chromosome. Genome scope is
+#' the correct pairing, because \code{build_annotations} derives the
+#' motif GC frequency tables from genome-wide quantiles; under
+#' per-chromosome bins the observed and expected sides of a deviation
+#' score are binned on different scales. Earlier versions binned per
+#' chromosome, so annotations built before this change are not
+#' comparable with annotations built after it.
 #' @param genome A \code{BSgenome} object.
 #' @param cores Number of parallel workers.
 #' @param tile_size Number of windows scanned per tile.
@@ -167,8 +167,12 @@ cpgSites <- function(genome, chromosomes = NULL) {
 #' windows starting at these positions, for example the result of
 #' \code{cpgSites}. \code{NULL} keeps every position, which produces a
 #' very large object.
-#' @param bin_scope Either "chromosome" (default, historical) or
-#' "genome".
+#' @param bin_scope Either "genome" (default) or "chromosome". Genome
+#' scope matches the quantiles \code{build_annotations} uses for the
+#' motif GC frequency tables, so the observed and expected sides of a
+#' deviation score are binned on the same scale. "chromosome"
+#' reproduces the behaviour of earlier versions, where the two sides
+#' were binned differently.
 #' @param chromosomes Character vector of sequences to scan. Defaults to
 #' the first 24 sequences.
 #' @return A \code{GRanges} object with \code{GC_bias} and \code{GC_bin}
@@ -178,7 +182,7 @@ cpgSites <- function(genome, chromosomes = NULL) {
 #' @importFrom stats quantile
 #' @export
 computeGCgenome <- function(genome, cores = 1, tile_size = 5e6,
-    sites = NULL, bin_scope = c("chromosome", "genome"),
+    sites = NULL, bin_scope = c("genome", "chromosome"),
     chromosomes = NULL) {
     bin_scope <- match.arg(bin_scope)
     if (!inherits(genome, "BSgenome")) {

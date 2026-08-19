@@ -17,8 +17,9 @@
 #' which produces an object of several hundred megabytes.
 #' @param tile_size Number of sliding windows scanned per tile when
 #' computing genome-wide GC content.
-#' @param bin_scope Whether GC bin boundaries are quantiles taken per
-#' chromosome (default, historical behaviour) or across the genome.
+#' @param bin_scope Whether GC bin boundaries are quantiles taken across
+#' the genome (default) or per chromosome. Genome scope matches the
+#' quantiles used for the motif GC frequency tables below.
 #' @author Irem Gunduz
 #' @param genome BSgenome object
 #' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
@@ -28,7 +29,7 @@ build_annotations <- function(
     annotations, annotations_name = NULL,
     pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL,
     keep_score = TRUE, gc_sites = NULL, tile_size = 5e6,
-    bin_scope = c("chromosome", "genome")) {
+    bin_scope = c("genome", "chromosome")) {
   bin_scope <- match.arg(bin_scope)
   outdir <- file.path(pkg.base.dir, "inst/extdata")
   if (!dir.exists(outdir)) {
