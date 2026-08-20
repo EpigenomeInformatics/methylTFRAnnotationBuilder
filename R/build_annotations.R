@@ -167,7 +167,15 @@ build_annotations <- function(
     }
 
     if (!file.exists(merged_file)) {
-      temp_dir <- file.path(pkg.base.dir, "temp", set_name)
+      # The distal and unrestricted passes over the same motif set must
+      # not share a chunk cache: chunks are reused if present, so an
+      # interrupted pass would leak into the other. Separate directories
+      # mean neither has to be cleared, so an interrupted run resumes
+      # from its completed chunks instead of starting over.
+      temp_dir <- file.path(
+        pkg.base.dir, "temp",
+        paste0(set_name, if (is.null(enhancer)) "" else "_distal")
+      )
       if (!dir.exists(temp_dir)) {
         dir.create(temp_dir, recursive = TRUE)
       }

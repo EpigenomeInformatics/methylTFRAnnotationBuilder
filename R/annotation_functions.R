@@ -78,32 +78,87 @@ convert_to_matrix <- function(bins) {
 
 
 #' @title processMotifs2Matrix
-#' @description  process motifs to matrix
+#' @description Tabulate, for every offset along a motif's footprint
+#' window, how its binding sites distribute across the five GC bins.
+#' @details
+#' Sites are processed in batches rather than one at a time. The earlier
+#' implementation ran four R-level loops over every binding site --
+#' \code{compute_gc}, \code{convert_to_bins}, \code{convert_to_matrix}
+#' and a \code{Reduce} -- allocating a five-by-n matrix per site and
+#' summing millions of them. \code{compute_gc} also round-tripped each
+#' site through \code{as.character} before counting. For a motif with a
+#' million sites that is several million R calls and allocations to
+#' produce one small matrix.
+#'
+#' Each batch is now unlisted into a single sequence and every window of
+#' every site is counted in one \code{letterFrequency} call over a
+#' \code{Views} object, then accumulated with \code{tabulate}. Windows
+#' cannot straddle a site boundary because each site contributes only
+#' offsets 1 to width minus 29.
+#'
+#' Verified bit-identical to the previous implementation across motif
+#' widths and on sequences containing N, which is the case that produces
+#' NaN GC and has to be dropped rather than binned.
 #' @param motif The motif to process
 #' @param gc_bin The GC bins to use for conversion
 #' @param genome The genome object to use
 #' @param tf_bindsites The TF binding sites to use
 #' @param enhancer The enhancer regions to use
+#' @param batch_size Number of binding sites held in memory at once.
+#' Peak memory is roughly \code{batch_size} times the window count times
+#' sixteen bytes.
 #' @import GenomicRanges Biostrings
 #' @return A matrix of GC content values
 #' @export
-processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites, enhancer = NULL) {
+processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites,
+                                 enhancer = NULL, batch_size = 20000L) {
   tfbs <- tf_bindsites[[motif]]
   tfbs <- resize(tfbs, width(tfbs) + 130, fix = "center")
-  if (!is.null(enhancer)) {
-    tfbs <- subsetByOverlaps(tfbs, enhancer, ignore.strand = T)
+  win <- 30L
+  W <- as.integer(width(tfbs)[1])
+  if (is.na(W) || W < win) {
+    warning(sprintf("Motif %s has no usable binding sites.", motif))
+    return(NULL)
   }
-  dna_seq <- Biostrings::getSeq(genome, tfbs)
-  logger::log_info(paste("Processing compute gc .. ", motif))
-  motif_gc <- lapply(dna_seq, compute_gc)
-  logger::log_info(paste("Processing convert to bins .. ", motif))
-  gcbins <- lapply(motif_gc, convert_to_bins, gc_bin)
-  logger::log_info(paste("Processing convert to matrix ... ", motif))
-  gcmat <- lapply(gcbins, convert_to_matrix)
-  m_gcfreq <- Reduce("+", gcmat, accumulate = FALSE)
+  nw <- W - win + 1L
+
+  if (!is.null(enhancer)) {
+    tfbs <- subsetByOverlaps(tfbs, enhancer, ignore.strand = TRUE)
+  }
+  n <- length(tfbs)
+  logger::log_info(paste0(
+    "Processing ", motif, ": ", format(n, big.mark = ","), " sites"
+  ))
+  counts <- matrix(0, nrow = 5L, ncol = nw)
+  if (n == 0L) {
+    warning(sprintf("Motif %s has no binding sites in the given regions.",
+      motif))
+    return(sweep(counts, 2, colSums(counts), FUN = "/"))
+  }
+
+  for (from in seq.int(1L, n, by = batch_size)) {
+    idx <- seq.int(from, min(from + batch_size - 1L, n))
+    dna <- Biostrings::getSeq(genome, tfbs[idx])
+    m <- length(dna)
+    u <- unlist(dna)
+    st <- rep.int((seq_len(m) - 1L) * W, rep.int(nw, m)) + rep(seq_len(nw), m)
+    lf <- Biostrings::letterFrequency(
+      Biostrings::Views(u, start = st, width = win),
+      c("A", "C", "G", "T")
+    )
+    b <- findInterval(
+      (lf[, "C"] + lf[, "G"]) / rowSums(lf), gc_bin, rightmost.closed = TRUE
+    )
+    p <- rep(seq_len(nw), m)
+    keep <- !is.na(b) & b >= 1L
+    counts <- counts + matrix(
+      tabulate((p[keep] - 1L) * 5L + b[keep], nbins = 5L * nw),
+      nrow = 5L, ncol = nw
+    )
+    rm(dna, u, lf, b, p, keep)
+  }
   logger::log_info(paste("Normalizing matrix...", motif))
-  normalized_matrix <- sweep(as.matrix(m_gcfreq), 2, colSums(as.matrix(m_gcfreq)), FUN = "/")
-  return(normalized_matrix)
+  sweep(counts, 2, colSums(counts), FUN = "/")
 }
 
 #' @title computeGCgenome

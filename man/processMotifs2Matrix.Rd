@@ -4,7 +4,14 @@
 \alias{processMotifs2Matrix}
 \title{processMotifs2Matrix}
 \usage{
-processMotifs2Matrix(motif, gc_bin, genome, tf_bindsites, enhancer = NULL)
+processMotifs2Matrix(
+  motif,
+  gc_bin,
+  genome,
+  tf_bindsites,
+  enhancer = NULL,
+  batch_size = 20000L
+)
 }
 \arguments{
 \item{motif}{The motif to process}
@@ -16,10 +23,35 @@ processMotifs2Matrix(motif, gc_bin, genome, tf_bindsites, enhancer = NULL)
 \item{tf_bindsites}{The TF binding sites to use}
 
 \item{enhancer}{The enhancer regions to use}
+
+\item{batch_size}{Number of binding sites held in memory at once.
+Peak memory is roughly \code{batch_size} times the window count times
+sixteen bytes.}
 }
 \value{
 A matrix of GC content values
 }
 \description{
-process motifs to matrix
+Tabulate, for every offset along a motif's footprint
+window, how its binding sites distribute across the five GC bins.
+}
+\details{
+Sites are processed in batches rather than one at a time. The earlier
+implementation ran four R-level loops over every binding site --
+\code{compute_gc}, \code{convert_to_bins}, \code{convert_to_matrix}
+and a \code{Reduce} -- allocating a five-by-n matrix per site and
+summing millions of them. \code{compute_gc} also round-tripped each
+site through \code{as.character} before counting. For a motif with a
+million sites that is several million R calls and allocations to
+produce one small matrix.
+
+Each batch is now unlisted into a single sequence and every window of
+every site is counted in one \code{letterFrequency} call over a
+\code{Views} object, then accumulated with \code{tabulate}. Windows
+cannot straddle a site boundary because each site contributes only
+offsets 1 to width minus 29.
+
+Verified bit-identical to the previous implementation across motif
+widths and on sequences containing N, which is the case that produces
+NaN GC and has to be dropped rather than binned.
 }
