@@ -1,12 +1,89 @@
+#' @title taxonomyId
+#' @description Map an organism name to its NCBI taxonomy identifier.
+#' @details JASPAR filters matrices by taxonomy identifier, so a genome
+#' has to be translated before it can be used to select motifs. An
+#' unrecognised organism returns \code{NA}, which callers treat as
+#' "cannot select by species" rather than as an error, since the
+#' vertebrate collection is usually still usable.
+#' @param organism Organism name, as returned by
+#' \code{GenomeInfoDb::organism}.
+#' @return A single integer taxonomy identifier, or \code{NA_integer_}.
+#' @keywords internal
+taxonomyId <- function(organism) {
+  ids <- c(
+    "Homo sapiens" = 9606L,
+    "Mus musculus" = 10090L,
+    "Rattus norvegicus" = 10116L,
+    "Danio rerio" = 7955L,
+    "Gallus gallus" = 9031L,
+    "Drosophila melanogaster" = 7227L,
+    "Caenorhabditis elegans" = 6239L,
+    "Saccharomyces cerevisiae" = 4932L,
+    "Arabidopsis thaliana" = 3702L
+  )
+  if (is.null(organism) || !organism %in% names(ids)) {
+    return(NA_integer_)
+  }
+  unname(ids[organism])
+}
+
+
+#' @title standardChrs
+#' @description The primary assembled chromosomes of a genome.
+#' @details Earlier versions took the first 24 sequence names, which is
+#' the human chromosome count. On mm10, which has 19 autosomes, that
+#' reaches past chrY into unplaced scaffolds; on any genome with a
+#' different sequence ordering it selects an arbitrary set. The
+#' chromosome list is now derived from the genome itself.
+#'
+#' The mitochondrion is excluded by default. Its GC content and
+#' methylation are both atypical, and at 16 kb it contributes nothing to
+#' genome-wide quantiles while skewing nothing but itself.
+#' @param genome A \code{BSgenome} object.
+#' @param drop_mito Exclude the mitochondrial sequence.
+#' @return A character vector of sequence names.
+#' @import GenomeInfoDb
+#' @export
+standardChrs <- function(genome, drop_mito = TRUE) {
+  chrs <- tryCatch(
+    GenomeInfoDb::standardChromosomes(genome),
+    error = function(e) as.character(GenomeInfoDb::seqnames(genome))
+  )
+  if (length(chrs) == 0) {
+    chrs <- as.character(GenomeInfoDb::seqnames(genome))
+  }
+  if (drop_mito) {
+    chrs <- grep("^(chr)?(M|MT)$", chrs, value = TRUE, invert = TRUE)
+  }
+  chrs
+}
+
+
 #' @title prepareMotifmatchr
 #' @description Prepare objects for a \code{motifmatchr} analysis
-#' @param genome character string specifying genome assembly
+#' @details The JASPAR collections are filtered by species. Earlier
+#' versions hardcoded \code{species = 9606} for jaspar2020, so asking
+#' for a mouse genome returned human matrices and the build completed
+#' without any error. The species is now taken from the genome unless
+#' one is given explicitly.
+#' @param genome character string specifying genome assembly, or a
+#' \code{BSgenome} object
 #' @param motifs either a character string ("jaspar", "encode", "cisbp", etc.) or an object containing PWMs
+#' @param species NCBI taxonomy identifier used to filter the JASPAR
+#' collections. \code{NULL} derives it from \code{genome}.
+#' @param jaspar_opts Optional named list passed to
+#' \code{TFBSTools::getMatrixSet} in place of the constructed options.
+#' Use it when species filtering is not what you want, for example
+#' \code{list(tax_group = "vertebrates", collection = "CORE")} to take
+#' the whole vertebrate collection rather than the matrices annotated to
+#' one species. This matters for mouse, where the species-filtered set
+#' is far smaller than the human one.
 #' @return A list containing objects to be used as arguments for \code{motifmatchr}
 #' @author Fabian Mueller
 #' @import GenomeInfoDb TFBSTools
 #' @export
-prepareMotifmatchr <- function(genome, motifs) {
+prepareMotifmatchr <- function(genome, motifs, species = NULL,
+                               jaspar_opts = NULL) {
   res <- list()
   motifs <- tolower(motifs)
   # Get genome object
@@ -16,20 +93,49 @@ prepareMotifmatchr <- function(genome, motifs) {
   }
   spec <- GenomeInfoDb::organism(genomeObj)
 
+  if (is.null(species)) {
+    species <- taxonomyId(spec)
+    if (is.na(species)) {
+      warning(sprintf(
+        paste(
+          "No taxonomy identifier is known for %s. Pass species, or",
+          "jaspar_opts, to select JASPAR matrices explicitly."
+        ), spec
+      ))
+    }
+  }
+
+  # Species filtering unless the caller overrides it wholesale.
+  jasparOptions <- function() {
+    if (!is.null(jaspar_opts)) {
+      return(jaspar_opts)
+    }
+    if (is.na(species)) {
+      return(list(tax_group = "vertebrates", collection = "CORE"))
+    }
+    list(species = species, collection = "CORE")
+  }
+
   # Prepare motif PWMs
   motifL <- TFBSTools::PWMatrixList()
 
   if (is.character(motifs)) {
     if ("jaspar2020" %in% motifs) {
-      opts <- list(species = 9606, collection = "CORE")
+      opts <- jasparOptions()
       mlCur <- TFBSTools::getMatrixSet(JASPAR2020::JASPAR2020, opts)
+      if (length(mlCur) == 0) {
+        stop(sprintf(
+          "JASPAR2020 returned no matrices for: %s",
+          paste(names(opts), unlist(opts), sep = " = ", collapse = ", ")
+        ))
+      }
       if (!isTRUE(all.equal(TFBSTools::name(mlCur), names(mlCur)))) {
         names(mlCur) <- paste(names(mlCur), TFBSTools::name(mlCur), sep = "_")
       }
       motifL <- c(motifL, TFBSTools::toPWM(mlCur))
     }
-    if (grepl("jaspar2018", motifs)) {
-      opts <- list(species = spec, collection = "CORE")
+    if ("jaspar2018" %in% motifs) {
+      opts <- jasparOptions()
       mlCur <- TFBSTools::getMatrixSet(JASPAR2018::JASPAR2018, opts)
       if (!isTRUE(all.equal(TFBSTools::name(mlCur), names(mlCur)))) {
         names(mlCur) <- paste(names(mlCur), TFBSTools::name(mlCur), sep = "_")
@@ -69,7 +175,11 @@ prepareMotifmatchr <- function(genome, motifs) {
         warning(sprintf("Could not find cisBP annotation for species: %s", spec))
       }
     }
-    if ("cisbp_v2" %in% motifs) {
+    # cisbpv2 is accepted as well as cisbp_v2. The hg38 annotation files
+    # are named cisbpv2_*, so a set requested under that name has to
+    # resolve here or a from-scratch build writes files the accessors
+    # cannot find.
+    if (any(c("cisbp_v2", "cisbpv2") %in% motifs)) {
       if (!requireNamespace("chromVARmotifs", quietly = TRUE)) stop("chromVARmotifs package is required but not available.")
       if (spec == "Mus musculus") {
         data("mouse_pwms_v2", package = "chromVARmotifs", envir = environment())
@@ -184,8 +294,7 @@ findTFBindSites <- function(genome, motifs, BPPARAM = BiocParallel::bpparam(),
     }
 
     if (is.null(chromosomes)) {
-        all_seqnames <- GenomeInfoDb::seqnames(genome)
-        chromosomes <- grep("^chr[0-9XY]+$", all_seqnames, value = TRUE)
+        chromosomes <- standardChrs(genome)
     }
     if (length(chromosomes) == 0) {
         stop("No chromosomes selected; check the sequence names.")

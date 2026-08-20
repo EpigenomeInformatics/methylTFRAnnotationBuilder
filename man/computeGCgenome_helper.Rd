@@ -4,7 +4,7 @@
 \alias{computeGCgenome_helper}
 \title{computeGCgenome_helper}
 \usage{
-computeGCgenome_helper(genome, chr, chr_len, tile_size = 5e+06, sites = NULL)
+computeGCgenome_helper(genome, chr, chr_len, tile_size = 5e+06, step = 30L)
 }
 \arguments{
 \item{genome}{A \code{BSgenome} object.}
@@ -15,10 +15,14 @@ computeGCgenome_helper(genome, chr, chr_len, tile_size = 5e+06, sites = NULL)
 
 \item{tile_size}{Number of windows scanned per tile.}
 
-\item{sites}{Optional \code{GRanges} restricting the output.}
+\item{step}{Distance between consecutive window starts.}
 }
 \value{
-A \code{GRanges} object with a \code{GC_bias} metadata column.
+A list with an integer \code{start} vector and a numeric
+\code{gc} vector, one element per window. Vectors rather than a
+\code{GRanges}, because the caller concatenates across chromosomes
+and building the object once at the end is both faster and far
+cheaper in memory.
 }
 \description{
 Compute GC content in 30 nt sliding windows across one

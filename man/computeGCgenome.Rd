@@ -8,7 +8,7 @@ computeGCgenome(
   genome,
   cores = 1,
   tile_size = 5e+06,
-  sites = NULL,
+  step = 30L,
   bin_scope = c("genome", "chromosome"),
   chromosomes = NULL
 )
@@ -20,10 +20,15 @@ computeGCgenome(
 
 \item{tile_size}{Number of windows scanned per tile.}
 
-\item{sites}{Optional \code{GRanges} restricting the output to
-windows starting at these positions, for example the result of
-\code{cpgSites}. \code{NULL} keeps every position, which produces a
-very large object.}
+\item{step}{Distance between consecutive window starts, in bases.
+The default of 30 equals the window width, giving abutting
+non-overlapping tiles: one row per 30 bases of genome. This is what
+the published methylTFR annotations use, and it is what
+\code{addGCBintoMethylome} assumes, since it needs each methylation
+call to fall in exactly one window. Setting it to 1 gives a sliding
+scan at every offset, which produces roughly thirty times as many
+windows -- 2.9 billion for hg38 against 103 million -- and is not
+comparable with an annotation built at the default.}
 
 \item{bin_scope}{Either "genome" (default) or "chromosome". Genome
 scope matches the quantiles \code{build_annotations} uses for the
@@ -33,22 +38,26 @@ reproduces the behaviour of earlier versions, where the two sides
 were binned differently.}
 
 \item{chromosomes}{Character vector of sequences to scan. Defaults to
-the first 24 sequences.}
+the primary assembled chromosomes of \code{genome}, excluding the
+mitochondrion. Earlier versions took the first 24 sequence names,
+which is the human chromosome count: on mm10 that reached past chrY
+into unplaced scaffolds.}
 }
 \value{
 A \code{GRanges} object with \code{GC_bias} and \code{GC_bin}
 metadata columns.
 }
 \description{
-Compute GC content in 30 nt sliding windows and assign
-each window to one of five GC bins.
+Compute GC content in 30 nt windows and assign each
+window to one of five GC bins.
 }
 \details{
-The sliding-window scan is performed in tiles so that the intermediate
-nucleotide-frequency matrix never exceeds the size of one tile. The
-previous implementation scanned a whole chromosome in one call, which
-allocated an n-by-4 integer matrix of roughly four gigabytes for
-chr1, in every parallel worker simultaneously.
+Windows are non-overlapping by default: one row per 30 bases of
+genome, about 103 million for hg38. The scan is chunked so the
+intermediate nucleotide-frequency matrix stays bounded, and only the
+requested windows are counted. Counting every offset and discarding
+the unwanted rows costs thirty times the work and thirty times the
+memory for an identical result.
 
 Bin boundaries are quantiles of the observed GC distribution.
 \code{bin_scope} controls whether those quantiles are taken once

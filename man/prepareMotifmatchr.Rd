@@ -4,18 +4,37 @@
 \alias{prepareMotifmatchr}
 \title{prepareMotifmatchr}
 \usage{
-prepareMotifmatchr(genome, motifs)
+prepareMotifmatchr(genome, motifs, species = NULL, jaspar_opts = NULL)
 }
 \arguments{
-\item{genome}{character string specifying genome assembly}
+\item{genome}{character string specifying genome assembly, or a
+\code{BSgenome} object}
 
 \item{motifs}{either a character string ("jaspar", "encode", "cisbp", etc.) or an object containing PWMs}
+
+\item{species}{NCBI taxonomy identifier used to filter the JASPAR
+collections. \code{NULL} derives it from \code{genome}.}
+
+\item{jaspar_opts}{Optional named list passed to
+\code{TFBSTools::getMatrixSet} in place of the constructed options.
+Use it when species filtering is not what you want, for example
+\code{list(tax_group = "vertebrates", collection = "CORE")} to take
+the whole vertebrate collection rather than the matrices annotated to
+one species. This matters for mouse, where the species-filtered set
+is far smaller than the human one.}
 }
 \value{
 A list containing objects to be used as arguments for \code{motifmatchr}
 }
 \description{
 Prepare objects for a \code{motifmatchr} analysis
+}
+\details{
+The JASPAR collections are filtered by species. Earlier
+versions hardcoded \code{species = 9606} for jaspar2020, so asking
+for a mouse genome returned human matrices and the build completed
+without any error. The species is now taken from the genome unless
+one is given explicitly.
 }
 \author{
 Fabian Mueller

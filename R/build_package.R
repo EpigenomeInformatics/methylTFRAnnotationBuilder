@@ -18,6 +18,13 @@
 #' @param dest     Destination directory where the package should be created.
 #' @param motifSets a character vector of motif sets to be included in the package.
 #' @param version Version string for the generated package.
+#' @param assembly_id Genome assembly identifier used to name the
+#' genome-wide GC file, defaulting to \code{tolower(assembly)}. These
+#' are usually the same, but they must be given separately when the
+#' package is named after something other than the bare assembly: the
+#' GC file is named by \code{build_annotations} from the genome object
+#' itself, so a package called methylTFRAnnotationHg38Test built on hg38
+#' still needs to look for genomewide_GC_hg38.rds.
 #' @return Invisibly, \code{TRUE} if the package directory and its \code{DESCRIPTION} file were successfully created;
 #'         \code{FALSE} otherwise.
 #' @author methylTFR Authors
@@ -28,7 +35,8 @@
 #' }
 #' @export
 createMethylTFRPackageScaffold <- function(assembly, dest = getwd(),
-    motifSets = c("JASPAR2020"), version = "0.99.0") {
+    motifSets = c("JASPAR2020"), version = "0.99.0",
+    assembly_id = tolower(assembly)) {
     pkg.name <- paste0("methylTFRAnnotation", assembly)
     motifSets <- tolower(motifSets)
     if (length(motifSets) == 0 || anyDuplicated(motifSets) > 0) {
@@ -86,7 +94,7 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(),
         '.PKG_NAME <- "', pkg.name, '"\n',
         ".MOTIF_SETS <- c(",
         paste0('"', motifSets, '"', collapse = ", "), ")\n",
-        '.ASSEMBLY <- "', tolower(assembly), '"\n\n',
+        '.ASSEMBLY <- "', tolower(assembly_id), '"\n\n',
         "#' @keywords internal\n",
         ".resolve_extdata <- function(file) {\n",
         '    path <- system.file("extdata", file, package = .PKG_NAME)\n',

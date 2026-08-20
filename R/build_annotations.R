@@ -11,25 +11,36 @@
 #' @param keep_score Retain the motif match score on each binding site.
 #' \code{methylTFR} never reads it; dropping it removes eight bytes per
 #' site from the stored object.
-#' @param gc_sites Optional \code{GRanges} restricting the genome-wide GC
-#' table to positions that can actually be queried, for example
-#' \code{cpgSites(genome)}. \code{NULL} keeps every genomic position,
-#' which produces an object of several hundred megabytes.
-#' @param tile_size Number of sliding windows scanned per tile when
-#' computing genome-wide GC content.
+#' @param tile_size Number of windows scanned per tile when computing
+#' genome-wide GC content.
+#' @param step Distance between consecutive GC window starts. The
+#' default of 30 matches the window width, giving non-overlapping
+#' tiles, which is what the published annotations use.
 #' @param bin_scope Whether GC bin boundaries are quantiles taken across
 #' the genome (default) or per chromosome. Genome scope matches the
 #' quantiles used for the motif GC frequency tables below.
+#' @param chromosomes Character vector of sequences to use, for both
+#' motif matching and the genome-wide GC scan. \code{NULL} takes the
+#' primary assembled chromosomes of \code{genome}.
+#' @param species NCBI taxonomy identifier used to filter the JASPAR
+#' collections. \code{NULL} derives it from \code{genome}. Only consulted
+#' when motif matching actually runs, that is, when no binding-site file
+#' is already present.
+#' @param jaspar_opts Optional named list passed to
+#' \code{TFBSTools::getMatrixSet} in place of species filtering, for
+#' example \code{list(tax_group = "vertebrates", collection = "CORE")}.
 #' @author Irem Gunduz
 #' @param genome BSgenome object
 #' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
+#' @importFrom S4Vectors metadata
 #' @export
 #' @return NULL
 build_annotations <- function(
     annotations, annotations_name = NULL,
     pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL,
-    keep_score = TRUE, gc_sites = NULL, tile_size = 5e6,
-    bin_scope = c("genome", "chromosome")) {
+    keep_score = TRUE, tile_size = 5e6, step = 30L,
+    bin_scope = c("genome", "chromosome"), chromosomes = NULL,
+    species = NULL, jaspar_opts = NULL) {
   bin_scope <- match.arg(bin_scope)
   outdir <- file.path(pkg.base.dir, "inst/extdata")
   if (!dir.exists(outdir)) {
@@ -70,12 +81,17 @@ build_annotations <- function(
           genome <- tolower(genome)
         }
 
-        prep <- prepareMotifmatchr(genome, set_name)
+        prep <- prepareMotifmatchr(genome, set_name,
+          species = species, jaspar_opts = jaspar_opts
+        )
         assembly <- unique(GenomeInfoDb::genome(prep$genome))
         genome <- prep$genome
+        log_info("{set_name}: {length(prep$motifs)} motifs for ",
+          "{GenomeInfoDb::organism(genome)}")
 
         tf_bindsites <- findTFBindSites(genome, prep$motifs,
           BPPARAM = BiocParallel::MulticoreParam(workers = cores),
+          chromosomes = chromosomes,
           keep_score = keep_score
         )
         tf_bindsites_list[[set_name]] <- tf_bindsites
@@ -99,7 +115,8 @@ build_annotations <- function(
     log_info("Computing GC dist for the genome ...")
     gc_genome <- computeGCgenome(
       genome = genome, cores = cores, tile_size = tile_size,
-      sites = gc_sites, bin_scope = bin_scope
+      step = step, bin_scope = bin_scope,
+      chromosomes = chromosomes
     )
 
     # Save the GC dist
@@ -110,9 +127,31 @@ build_annotations <- function(
     gc_genome <- readRDS(genome_gc_path)
   }
 
-  # Compute the GC dist for the genome for TFBS usage
-  gc_dist <- gc_genome$GC_bias
-  gc_bin <- quantile(gc_dist, probs = seq(0, 1, 1 / 5))
+  # Bin boundaries for the motif GC frequency tables.
+  #
+  # These MUST be the boundaries the genome table's own GC_bin column
+  # was assigned with. The observed side of a deviation score reaches
+  # the table through addGCBintoMethylome(), which reads GC_bin; the
+  # expected side is built from the motif frequency tables binned here.
+  # computeGCgenome() records the boundaries it used, so use those
+  # rather than recomputing them here and hoping the two agree.
+  gc_bin <- S4Vectors::metadata(gc_genome)$gc_breaks
+  if (is.list(gc_bin)) {
+    stop(
+      "This genome GC table was built with bin_scope = \"chromosome\", ",
+      "which gives each chromosome its own boundaries. The motif GC ",
+      "frequency tables are genome-wide, so the two sides of a ",
+      "deviation score would be binned differently. Rebuild the table ",
+      "with bin_scope = \"genome\"."
+    )
+  }
+  if (is.null(gc_bin)) {
+    log_warn("Genome GC table records no bin boundaries; deriving them ",
+      "from the stored GC content. Correct for a genome-wide table, ",
+      "which is what older files are. Rebuild it to remove the ",
+      "assumption.")
+    gc_bin <- gcBreaks(gc_genome$GC_bias)
+  }
 
 
   for (set_name in names(tf_bindsites_list)) {

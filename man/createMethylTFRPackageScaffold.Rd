@@ -8,7 +8,8 @@ createMethylTFRPackageScaffold(
   assembly,
   dest = getwd(),
   motifSets = c("JASPAR2020"),
-  version = "0.99.0"
+  version = "0.99.0",
+  assembly_id = tolower(assembly)
 )
 }
 \arguments{
@@ -19,6 +20,14 @@ createMethylTFRPackageScaffold(
 \item{motifSets}{a character vector of motif sets to be included in the package.}
 
 \item{version}{Version string for the generated package.}
+
+\item{assembly_id}{Genome assembly identifier used to name the
+genome-wide GC file, defaulting to \code{tolower(assembly)}. These
+are usually the same, but they must be given separately when the
+package is named after something other than the bare assembly: the
+GC file is named by \code{build_annotations} from the genome object
+itself, so a package called methylTFRAnnotationHg38Test built on hg38
+still needs to look for genomewide_GC_hg38.rds.}
 }
 \value{
 Invisibly, \code{TRUE} if the package directory and its \code{DESCRIPTION} file were successfully created;

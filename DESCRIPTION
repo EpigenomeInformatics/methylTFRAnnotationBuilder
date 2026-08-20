@@ -21,6 +21,7 @@ Imports:
     GenomeInfoDb,
     GenomicRanges,
     IRanges,
+    S4Vectors,
     TFBSTools,
     logger,
     methods,
@@ -30,6 +31,7 @@ Imports:
     stats
 Suggests:
     BSgenome.Hsapiens.UCSC.hg38,
+    BSgenome.Mmusculus.UCSC.mm10,
     JASPAR2020,
     chromVARmotifs,
     testthat (>= 3.0.0)
