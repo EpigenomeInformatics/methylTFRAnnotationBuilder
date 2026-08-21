@@ -8,14 +8,40 @@
 #' @param chunk_size Number of annotations to save per RDS (default: 10)
 #' @param cores Number of cores to use for parallel processing (default: 10)
 #' @param enhancer GRanges object for distal regions (default: NULL)
+#' @param keep_score Retain the motif match score on each binding site.
+#' \code{methylTFR} never reads it; dropping it removes eight bytes per
+#' site from the stored object.
+#' @param tile_size Number of windows scanned per tile when computing
+#' genome-wide GC content.
+#' @param step Distance between consecutive GC window starts. The
+#' default of 30 matches the window width, giving non-overlapping
+#' tiles, which is what the published annotations use.
+#' @param bin_scope Whether GC bin boundaries are quantiles taken across
+#' the genome (default) or per chromosome. Genome scope matches the
+#' quantiles used for the motif GC frequency tables below.
+#' @param chromosomes Character vector of sequences to use, for both
+#' motif matching and the genome-wide GC scan. \code{NULL} takes the
+#' primary assembled chromosomes of \code{genome}.
+#' @param species NCBI taxonomy identifier used to filter the JASPAR
+#' collections. \code{NULL} derives it from \code{genome}. Only consulted
+#' when motif matching actually runs, that is, when no binding-site file
+#' is already present.
+#' @param jaspar_opts Optional named list passed to
+#' \code{TFBSTools::getMatrixSet} in place of species filtering, for
+#' example \code{list(tax_group = "vertebrates", collection = "CORE")}.
 #' @author Irem Gunduz
 #' @param genome BSgenome object
 #' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
+#' @importFrom S4Vectors metadata
 #' @export
 #' @return NULL
 build_annotations <- function(
     annotations, annotations_name = NULL,
-    pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL) {
+    pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL,
+    keep_score = TRUE, tile_size = 5e6, step = 30L,
+    bin_scope = c("genome", "chromosome"), chromosomes = NULL,
+    species = NULL, jaspar_opts = NULL) {
+  bin_scope <- match.arg(bin_scope)
   outdir <- file.path(pkg.base.dir, "inst/extdata")
   if (!dir.exists(outdir)) {
     dir.create(outdir, recursive = TRUE)
@@ -42,12 +68,12 @@ build_annotations <- function(
   }
   if (mode == "GRangesList") {
     tf_bindsites_list <- list()
-    annotations_name <- toupper(annotations_name)
+    annotations_name <- tolower(annotations_name)
     tf_bindsites_list[[annotations_name]] <- annotations
   }
   if (mode == "motifsets") {
     tf_bindsites_list <- list()
-    for (set_name in annotations) {
+    for (set_name in tolower(annotations)) {
       tf_file <- file.path(outdir, paste0(set_name, "_tf_bindsites.rds"))
       if (!file.exists(tf_file)) {
         log_info("Building annotation for motifset: {set_name}")
@@ -55,11 +81,19 @@ build_annotations <- function(
           genome <- tolower(genome)
         }
 
-        prep <- prepareMotifmatchr(genome, set_name)
+        prep <- prepareMotifmatchr(genome, set_name,
+          species = species, jaspar_opts = jaspar_opts
+        )
         assembly <- unique(GenomeInfoDb::genome(prep$genome))
         genome <- prep$genome
+        log_info("{set_name}: {length(prep$motifs)} motifs for ",
+          "{GenomeInfoDb::organism(genome)}")
 
-        tf_bindsites <- findTFBindSites(genome, prep$motifs, BPPARAM = BiocParallel::MulticoreParam(workers = cores))
+        tf_bindsites <- findTFBindSites(genome, prep$motifs,
+          BPPARAM = BiocParallel::MulticoreParam(workers = cores),
+          chromosomes = chromosomes,
+          keep_score = keep_score
+        )
         tf_bindsites_list[[set_name]] <- tf_bindsites
 
 
@@ -79,7 +113,11 @@ build_annotations <- function(
   if (!file.exists(genome_gc_path)) {
     # Compute the GC dist
     log_info("Computing GC dist for the genome ...")
-    gc_genome <- computeGCgenome(genome = genome, cores = cores)
+    gc_genome <- computeGCgenome(
+      genome = genome, cores = cores, tile_size = tile_size,
+      step = step, bin_scope = bin_scope,
+      chromosomes = chromosomes
+    )
 
     # Save the GC dist
     log_info("Saving GC dist for the genome ...")
@@ -89,21 +127,55 @@ build_annotations <- function(
     gc_genome <- readRDS(genome_gc_path)
   }
 
-  # Compute the GC dist for the genome for TFBS usage
-  gc_dist <- gc_genome$GC_bias
-  gc_bin <- quantile(gc_dist, probs = seq(0, 1, 1 / 5))
+  # Bin boundaries for the motif GC frequency tables.
+  #
+  # These MUST be the boundaries the genome table's own GC_bin column
+  # was assigned with. The observed side of a deviation score reaches
+  # the table through addGCBintoMethylome(), which reads GC_bin; the
+  # expected side is built from the motif frequency tables binned here.
+  # computeGCgenome() records the boundaries it used, so use those
+  # rather than recomputing them here and hoping the two agree.
+  gc_bin <- S4Vectors::metadata(gc_genome)$gc_breaks
+  if (is.list(gc_bin)) {
+    stop(
+      "This genome GC table was built with bin_scope = \"chromosome\", ",
+      "which gives each chromosome its own boundaries. The motif GC ",
+      "frequency tables are genome-wide, so the two sides of a ",
+      "deviation score would be binned differently. Rebuild the table ",
+      "with bin_scope = \"genome\"."
+    )
+  }
+  if (is.null(gc_bin)) {
+    log_warn("Genome GC table records no bin boundaries; deriving them ",
+      "from the stored GC content. Correct for a genome-wide table, ",
+      "which is what older files are. Rebuild it to remove the ",
+      "assumption.")
+    gc_bin <- gcBreaks(gc_genome$GC_bias)
+  }
 
 
   for (set_name in names(tf_bindsites_list)) {
     tf_bindsites <- tf_bindsites_list[[set_name]]
     if (!is.null(enhancer)) {
-      merged_file <- file.path(outdir, paste0(set_name, "_distal_motif_gcfreq.rds"))
+      merged_file <- file.path(
+        outdir, paste0(tolower(set_name), "_distal_motif_gcfreq.rds")
+      )
     } else {
-      merged_file <- file.path(outdir, paste0(set_name, "_motif_gcfreq.rds"))
+      merged_file <- file.path(
+        outdir, paste0(tolower(set_name), "_motif_gcfreq.rds")
+      )
     }
 
     if (!file.exists(merged_file)) {
-      temp_dir <- file.path(pkg.base.dir, "temp", set_name)
+      # The distal and unrestricted passes over the same motif set must
+      # not share a chunk cache: chunks are reused if present, so an
+      # interrupted pass would leak into the other. Separate directories
+      # mean neither has to be cleared, so an interrupted run resumes
+      # from its completed chunks instead of starting over.
+      temp_dir <- file.path(
+        pkg.base.dir, "temp",
+        paste0(set_name, if (is.null(enhancer)) "" else "_distal")
+      )
       if (!dir.exists(temp_dir)) {
         dir.create(temp_dir, recursive = TRUE)
       }

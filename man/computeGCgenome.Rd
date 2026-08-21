@@ -4,16 +4,68 @@
 \alias{computeGCgenome}
 \title{computeGCgenome}
 \usage{
-computeGCgenome(genome, cores = 1)
+computeGCgenome(
+  genome,
+  cores = 1,
+  tile_size = 5e+06,
+  step = 30L,
+  bin_scope = c("genome", "chromosome"),
+  chromosomes = NULL
+)
 }
 \arguments{
-\item{genome}{The genome object to use}
+\item{genome}{A \code{BSgenome} object.}
 
-\item{cores}{The number of cores to use for parallel processing}
+\item{cores}{Number of parallel workers.}
+
+\item{tile_size}{Number of windows scanned per tile.}
+
+\item{step}{Distance between consecutive window starts, in bases.
+The default of 30 equals the window width, giving abutting
+non-overlapping tiles: one row per 30 bases of genome. This is what
+the published methylTFR annotations use, and it is what
+\code{addGCBintoMethylome} assumes, since it needs each methylation
+call to fall in exactly one window. Setting it to 1 gives a sliding
+scan at every offset, which produces roughly thirty times as many
+windows -- 2.9 billion for hg38 against 103 million -- and is not
+comparable with an annotation built at the default.}
+
+\item{bin_scope}{Either "genome" (default) or "chromosome". Genome
+scope matches the quantiles \code{build_annotations} uses for the
+motif GC frequency tables, so the observed and expected sides of a
+deviation score are binned on the same scale. "chromosome"
+reproduces the behaviour of earlier versions, where the two sides
+were binned differently.}
+
+\item{chromosomes}{Character vector of sequences to scan. Defaults to
+the primary assembled chromosomes of \code{genome}, excluding the
+mitochondrion. Earlier versions took the first 24 sequence names,
+which is the human chromosome count: on mm10 that reached past chrY
+into unplaced scaffolds.}
 }
 \value{
-A GRanges object with GC content values for the entire genome
+A \code{GRanges} object with \code{GC_bias} and \code{GC_bin}
+metadata columns.
 }
 \description{
-compute GC content for the entire genome
+Compute GC content in 30 nt windows and assign each
+window to one of five GC bins.
+}
+\details{
+Windows are non-overlapping by default: one row per 30 bases of
+genome, about 103 million for hg38. The scan is chunked so the
+intermediate nucleotide-frequency matrix stays bounded, and only the
+requested windows are counted. Counting every offset and discarding
+the unwanted rows costs thirty times the work and thirty times the
+memory for an identical result.
+
+Bin boundaries are quantiles of the observed GC distribution.
+\code{bin_scope} controls whether those quantiles are taken once
+across the genome, the default, or per chromosome. Genome scope is
+the correct pairing, because \code{build_annotations} derives the
+motif GC frequency tables from genome-wide quantiles; under
+per-chromosome bins the observed and expected sides of a deviation
+score are binned on different scales. Earlier versions binned per
+chromosome, so annotations built before this change are not
+comparable with annotations built after it.
 }

@@ -1,10 +1,38 @@
 Package: methylTFRAnnotationBuilder
-Title: Build Annotation packages for methylTFR usage
-Version: 0.99.0
-Authors@R: c(person("Irem B.", "Gunduz", email = "irembgunduz@gmail.com", role = c("aut", "cre")))
+Title: Build Annotation Packages for methylTFR
+Version: 0.99.1
+Authors@R: c(person("Irem B.", "Gunduz", email = "irembgunduz@gmail.com",
+    role = c("aut", "cre")))
+Description: Builds the transcription factor binding site, motif GC
+    frequency and genome-wide GC distribution annotations required by the
+    methylTFR package, and scaffolds them into an installable annotation
+    package for a given genome assembly.
 URL: https://github.com/EpigenomeInformatics/methylTFRAnnotationBuilder
-Date: 2025-29-04
-RoxygenNote: 7.3.2
+BugReports: https://github.com/EpigenomeInformatics/methylTFRAnnotationBuilder/issues
+Date: 2026-08-19
+License: MIT + file LICENSE
 Encoding: UTF-8
-License: MIT
 LazyData: false
+Depends:
+    R (>= 4.4.0)
+Imports:
+    BiocParallel,
+    Biostrings,
+    GenomeInfoDb,
+    GenomicRanges,
+    IRanges,
+    S4Vectors,
+    TFBSTools,
+    logger,
+    methods,
+    motifmatchr,
+    parallel,
+    roxygen2,
+    stats
+Suggests:
+    BSgenome.Hsapiens.UCSC.hg38,
+    BSgenome.Mmusculus.UCSC.mm10,
+    JASPAR2020,
+    chromVARmotifs,
+    testthat (>= 3.0.0)
+RoxygenNote: 7.3.2

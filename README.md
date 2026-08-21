@@ -46,14 +46,33 @@ createMethylTFRPackageScaffold("Hg38",dest = pkg.base.dir, motifSets = c("JASPAR
 # Update the package path
 pkg.base.dir <- paste0(pkg.base.dir,"methylTFRAnnotationHg38")
 
+# Restrict the genome-wide GC table to CpG positions. methylTFR reads
+# that table only through findOverlaps() against methylation calls, so
+# windows that overlap no CpG are never used. For CpG methylomes this is
+# lossless and cuts the table by about two orders of magnitude.
+cpg <- cpgSites(BSgenome.Hsapiens.UCSC.hg38)
+
 # Create annotations
-build_annotations(annotations = "JASPAR2020", 
+build_annotations(annotations = "JASPAR2020",
                   pkg.base.dir = pkg.base.dir,
                   chunk_size = 2,
                   genome = BSgenome.Hsapiens.UCSC.hg38,
-                  cores = 30,
-                  enhancer = NULL)
+                  cores = 24,
+                  enhancer = NULL,
+                  gc_sites = cpg,      # omit for the full genome-wide table
+                  keep_score = FALSE)  # methylTFR never reads the score
 ```
+
+### Memory
+
+Binding-site discovery parallelises over chromosomes and matches every
+motif in one pass per chromosome, so peak memory scales with the number
+of workers times one chromosome, not one chromosome per motif. Setting
+`cores` above the number of chromosomes gains nothing.
+
+The genome-wide GC scan runs in tiles, so the intermediate
+nucleotide-frequency matrix stays at tile size rather than reaching
+several gigabytes per chromosome. Lower `tile_size` if memory is tight.
 
 ```bash
 cd methylTFRAnnotationHg38

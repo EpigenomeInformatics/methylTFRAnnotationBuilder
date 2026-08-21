@@ -11,7 +11,14 @@ build_annotations(
   chunk_size = 10,
   genome,
   cores = 10,
-  enhancer = NULL
+  enhancer = NULL,
+  keep_score = TRUE,
+  tile_size = 5e+06,
+  step = 30L,
+  bin_scope = c("genome", "chromosome"),
+  chromosomes = NULL,
+  species = NULL,
+  jaspar_opts = NULL
 )
 }
 \arguments{
@@ -30,6 +37,34 @@ is a GRangesList, this parameter is mandatory.}
 \item{cores}{Number of cores to use for parallel processing (default: 10)}
 
 \item{enhancer}{GRanges object for distal regions (default: NULL)}
+
+\item{keep_score}{Retain the motif match score on each binding site.
+\code{methylTFR} never reads it; dropping it removes eight bytes per
+site from the stored object.}
+
+\item{tile_size}{Number of windows scanned per tile when computing
+genome-wide GC content.}
+
+\item{step}{Distance between consecutive GC window starts. The
+default of 30 matches the window width, giving non-overlapping
+tiles, which is what the published annotations use.}
+
+\item{bin_scope}{Whether GC bin boundaries are quantiles taken across
+the genome (default) or per chromosome. Genome scope matches the
+quantiles used for the motif GC frequency tables below.}
+
+\item{chromosomes}{Character vector of sequences to use, for both
+motif matching and the genome-wide GC scan. \code{NULL} takes the
+primary assembled chromosomes of \code{genome}.}
+
+\item{species}{NCBI taxonomy identifier used to filter the JASPAR
+collections. \code{NULL} derives it from \code{genome}. Only consulted
+when motif matching actually runs, that is, when no binding-site file
+is already present.}
+
+\item{jaspar_opts}{Optional named list passed to
+\code{TFBSTools::getMatrixSet} in place of species filtering, for
+example \code{list(tax_group = "vertebrates", collection = "CORE")}.}
 }
 \description{
 Build annotation RDS files from either motif set names or provided GRanges.
