@@ -1,19 +1,17 @@
 #' @title createMethylTFRPackageScaffold
 #' @description Creates a scaffold folder structure for a methylTFR annotation package.
 #' @details
-#' The generated accessors validate their argument against the motif sets
-#' the package was actually built with. Earlier versions wrote a check
-#' against \code{motifSets}, a variable that exists only while the
-#' scaffold is being generated and is undefined inside the finished
-#' package, so the generated accessor failed at run time. The valid
-#' names are now written into the generated file as a literal.
+#' The scaffold contains \code{getTFbindsites()}, \code{getGCfreq()} and
+#' \code{getGenomeGC()} accessors that read the \code{.rds} files
+#' written by \code{\link{build_annotations}} into \code{inst/extdata}.
+#' The accessors validate their argument against the motif sets the
+#' package was built with, which are written into the generated code as
+#' literals. File names are lower case throughout, matching
+#' \code{build_annotations}.
 #'
-#' File names are normalised to lower case on both sides, here and in
-#' \code{build_annotations}. Previously the accessor upper-cased the
-#' motif set before building the file name while \code{build_annotations}
-#' wrote the name as supplied, so any set whose name was not already
-#' upper case resolved to a missing file and failed inside
-#' \code{readRDS("")}.
+#' The published methylTFRAnnotationHg38 and methylTFRAnnotationMm10
+#' packages serve the same files from AnnotationHub instead of
+#' \code{inst/extdata}, because the files are too large for a package.
 #' @param assembly The genome assembly, e.g., "hg38".
 #' @param dest     Destination directory where the package should be created.
 #' @param motifSets a character vector of motif sets to be included in the package.
@@ -27,8 +25,8 @@
 #' still needs to look for genomewide_GC_hg38.rds.
 #' @return Invisibly, \code{TRUE} if the package directory and its \code{DESCRIPTION} file were successfully created;
 #'         \code{FALSE} otherwise.
-#' @author methylTFR Authors
-#' Inspired by \code{createPackageScaffold} from the \code{RnBeadsAnnotationCreator} package.
+#' @author Irem B. Gunduz. Inspired by \code{createPackageScaffold} from
+#' the \pkg{RnBeadsAnnotationCreator} package.
 #' @examples
 #' \donttest{
 #' createMethylTFRPackageScaffold("hg38", dest = tempdir())
@@ -41,6 +39,14 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(),
     motifSets <- tolower(motifSets)
     if (length(motifSets) == 0 || anyDuplicated(motifSets) > 0) {
         stop("motifSets must be a non-empty vector of unique names.")
+    }
+
+    organism_view <- if (grepl("^(hg|grch)", tolower(assembly))) {
+        ", Homo_sapiens"
+    } else if (grepl("^mm", tolower(assembly))) {
+        ", Mus_musculus"
+    } else {
+        ""
     }
 
     desc <- c(
@@ -59,7 +65,7 @@ createMethylTFRPackageScaffold <- function(assembly, dest = getwd(),
         Version = version,
         Depends = "R (>= 4.4.0)",
         Imports = "GenomicRanges",
-        biocViews = "AnnotationData, Genome, Homo_sapiens",
+        biocViews = paste0("AnnotationData, Genome", organism_view),
         RoxygenNote = "7.3.2"
     )
 

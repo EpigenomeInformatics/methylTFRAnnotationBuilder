@@ -4,10 +4,14 @@
 #' representing TF binding sites.
 #' @param annotations_name Name for the annotation set (default: NULL), if annotations
 #' is a GRangesList, this parameter is mandatory.
-#' @param pkg.base.dir Output directory to save RDS files (default: inst/extdata)
-#' @param chunk_size Number of annotations to save per RDS (default: 10)
+#' @param pkg.base.dir Package directory; files are written to its
+#' \code{inst/extdata} subdirectory.
+#' @param chunk_size Number of motifs processed per checkpoint file. An
+#' interrupted run resumes from the last completed chunk.
 #' @param cores Number of cores to use for parallel processing (default: 10)
-#' @param enhancer GRanges object for distal regions (default: NULL)
+#' @param enhancer Optional \code{GRanges} of distal regulatory regions.
+#' When given, the GC frequency tables use only binding sites overlapping
+#' them and are written as \code{<set>_distal_motif_gcfreq.rds}.
 #' @param keep_score Retain the motif match score on each binding site.
 #' \code{methylTFR} never reads it; dropping it removes eight bytes per
 #' site from the stored object.
@@ -29,12 +33,14 @@
 #' @param jaspar_opts Optional named list passed to
 #' \code{TFBSTools::getMatrixSet} in place of species filtering, for
 #' example \code{list(tax_group = "vertebrates", collection = "CORE")}.
-#' @author Irem Gunduz
-#' @param genome BSgenome object
+#' @param genome A \code{BSgenome} object.
+#' @author Irem B. Gunduz
 #' @import GenomicRanges Biostrings parallel motifmatchr logger BiocParallel
 #' @importFrom S4Vectors metadata
 #' @export
-#' @return NULL
+#' @return Invisibly \code{NULL}. Called for its side effect of writing
+#' \code{<set>_tf_bindsites.rds}, \code{<set>_motif_gcfreq.rds} and
+#' \code{genomewide_GC_<assembly>.rds} to \code{inst/extdata}.
 build_annotations <- function(
     annotations, annotations_name = NULL,
     pkg.base.dir, chunk_size = 10, genome, cores = 10, enhancer = NULL,
@@ -55,7 +61,7 @@ build_annotations <- function(
     stop("annotations must be either a character vector of motif set names or a GRangesList.")
   }
   if (!inherits(genome, "BSgenome")) {
-    stop("genome must be either a BSgenome object")
+    stop("genome must be a BSgenome object.")
   }
   if (!is.numeric(cores)) {
     # Set the default number of cores to 1 if cores is not numeric
@@ -77,15 +83,9 @@ build_annotations <- function(
       tf_file <- file.path(outdir, paste0(set_name, "_tf_bindsites.rds"))
       if (!file.exists(tf_file)) {
         log_info("Building annotation for motifset: {set_name}")
-        if (is.character(genome)) {
-          genome <- tolower(genome)
-        }
-
         prep <- prepareMotifmatchr(genome, set_name,
           species = species, jaspar_opts = jaspar_opts
         )
-        assembly <- unique(GenomeInfoDb::genome(prep$genome))
-        genome <- prep$genome
         log_info("{set_name}: {length(prep$motifs)} motifs for ",
           "{GenomeInfoDb::organism(genome)}")
 

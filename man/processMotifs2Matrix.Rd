@@ -14,44 +14,45 @@ processMotifs2Matrix(
 )
 }
 \arguments{
-\item{motif}{The motif to process}
+\item{motif}{Name of the motif to process (an element name of
+\code{tf_bindsites}).}
 
-\item{gc_bin}{The GC bins to use for conversion}
+\item{gc_bin}{The six GC bin boundaries, as returned by
+\code{\link{gcBreaks}}.}
 
-\item{genome}{The genome object to use}
+\item{genome}{A \code{BSgenome} object.}
 
-\item{tf_bindsites}{The TF binding sites to use}
+\item{tf_bindsites}{A \code{GRangesList} of binding sites, as returned
+by \code{\link{findTFBindSites}}.}
 
-\item{enhancer}{The enhancer regions to use}
+\item{enhancer}{Optional \code{GRanges}. When given, only binding
+sites overlapping these regions are used (for example distal
+regulatory regions).}
 
 \item{batch_size}{Number of binding sites held in memory at once.
 Peak memory is roughly \code{batch_size} times the window count times
 sixteen bytes.}
 }
 \value{
-A matrix of GC content values
+A numeric matrix with five rows (GC bins, lowest first) and
+one column per window position; each column sums to one.
 }
 \description{
 Tabulate, for every offset along a motif's footprint
 window, how its binding sites distribute across the five GC bins.
 }
 \details{
-Sites are processed in batches rather than one at a time. The earlier
-implementation ran four R-level loops over every binding site --
-\code{compute_gc}, \code{convert_to_bins}, \code{convert_to_matrix}
-and a \code{Reduce} -- allocating a five-by-n matrix per site and
-summing millions of them. \code{compute_gc} also round-tripped each
-site through \code{as.character} before counting. For a motif with a
-million sites that is several million R calls and allocations to
-produce one small matrix.
+Each binding site is widened by 130 bases (65 on either side) and a
+30 nt window is slid along it one base at a time. Every window is
+assigned to one of the five GC bins defined by \code{gc_bin}, and for
+each window position the fraction of binding sites falling into each
+bin is recorded. Windows containing \code{N} produce no GC value and
+are dropped rather than binned.
 
-Each batch is now unlisted into a single sequence and every window of
-every site is counted in one \code{letterFrequency} call over a
-\code{Views} object, then accumulated with \code{tabulate}. Windows
-cannot straddle a site boundary because each site contributes only
-offsets 1 to width minus 29.
-
-Verified bit-identical to the previous implementation across motif
-widths and on sequences containing N, which is the case that produces
-NaN GC and has to be dropped rather than binned.
+Sites are processed in batches: each batch is unlisted into a single
+sequence and all of its windows are counted in one
+\code{letterFrequency} call over a \code{Views} object, then
+accumulated with \code{tabulate}. Windows cannot straddle a site
+boundary because each site contributes only offsets 1 to width minus
+29.
 }

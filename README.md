@@ -1,82 +1,114 @@
 # methylTFRAnnotationBuilder
 
-
 <!-- badges: start -->
-[![GitHub issues](https://img.shields.io/github/issues/EpigenomeInformatics/methylTFRAnnotationBuilder)](https://github.com/EpigenomeInformatics/methylTFRAnnotationCreator/issues)
-[![GitHub pulls](https://img.shields.io/github/issues-pr/EpigenomeInformatics/methylTFRAnnotationBuilder)](https://github.com/EpigenomeInformatics/methylTFRAnnotationCreator/pulls)
+[![GitHub issues](https://img.shields.io/github/issues/EpigenomeInformatics/methylTFRAnnotationBuilder)](https://github.com/EpigenomeInformatics/methylTFRAnnotationBuilder/issues)
+[![GitHub pulls](https://img.shields.io/github/issues-pr/EpigenomeInformatics/methylTFRAnnotationBuilder)](https://github.com/EpigenomeInformatics/methylTFRAnnotationBuilder/pulls)
 <!-- badges: end -->
 
-`methylTFRAnnotationBuilder` is an R package for creating methylTFR annotation packages.
+`methylTFRAnnotationBuilder` builds the genome annotations used by
+[methylTFR](https://github.com/EpigenomeInformatics/methylTFR) and
+scaffolds them into an installable annotation package. It is the tool
+behind
+[methylTFRAnnotationHg38](https://github.com/EpigenomeInformatics/methylTFRAnnotationHg38)
+and
+[methylTFRAnnotationMm10](https://github.com/EpigenomeInformatics/methylTFRAnnotationMm10).
 
-## Installation instructions
+For a genome (`BSgenome`) and a set of motifs it produces three files:
 
-The latest version from [GitHub](https://github.com/EpigenomeInformatics/methylTFRAnnotationCreator) with:
+| File | Content |
+|---|---|
+| `<set>_tf_bindsites.rds` | `GRangesList` of genome-wide motif matches, one element per motif, each extended by 200 bp on either side |
+| `<set>_motif_gcfreq.rds` | list of 5 x n matrices: for each position along a motif's footprint, the fraction of binding sites in each genome-wide GC quintile |
+| `genomewide_GC_<assembly>.rds` | `GRanges` of non-overlapping 30 nt windows with their GC fraction (`GC_bias`) and GC quintile (`GC_bin`) |
 
+methylTFR uses the GC tables to correct TF deviation scores for sequence
+composition.
+
+## Installation
 
 ```r
-if (!requireNamespace("devtools", quietly = TRUE)) {
-  install.packages("devtools")
+if (!requireNamespace("remotes", quietly = TRUE)) {
+    install.packages("remotes")
 }
-devtools::install_github("EpigenomeInformatics/methylTFRAnnotationBuilder")
+remotes::install_github("EpigenomeInformatics/methylTFRAnnotationBuilder")
 ```
 
-## Example usage
+You also need the `BSgenome` package for your assembly (for example
+`BSgenome.Hsapiens.UCSC.hg38`) and the package that provides your motif
+set (`JASPAR2020`, or `chromVARmotifs` for `cisbpv2`, `homer` and
+`encode`).
+
+## Example
 
 ```r
-# Load necessary packages
-suppressPackageStartupMessages({
-  library(TFBSTools)
-  library(motifmatchr)
-  library(Biostrings)
-  library(data.table)
-  library(BiocParallel)
-  library(BSgenome.Hsapiens.UCSC.hg38)
-  library(dplyr)
-  library(stringr)
-  library(parallel)
-  library(logger)
-  library(methylTFRAnnotationBuilder)})
+library(methylTFRAnnotationBuilder)
+library(BSgenome.Hsapiens.UCSC.hg38)
 
-# Set the path to package
-pkg.base.dir <- getwd() 
+genome <- BSgenome.Hsapiens.UCSC.hg38
+dest <- getwd()
 
-# Create the package scaffold
-createMethylTFRPackageScaffold("Hg38",dest = pkg.base.dir, motifSets = c("JASPAR2020"))
+# 1. Create the package skeleton
+createMethylTFRPackageScaffold("Hg38", dest = dest, motifSets = "jaspar2020")
+pkg_dir <- file.path(dest, "methylTFRAnnotationHg38")
 
-# Update the package path
-pkg.base.dir <- paste0(pkg.base.dir,"methylTFRAnnotationHg38")
+# 2. Compute binding sites, the genome-wide GC table and the motif GC
+#    frequency tables into pkg_dir/inst/extdata
+build_annotations(
+    annotations = "jaspar2020",
+    pkg.base.dir = pkg_dir,
+    genome = genome,
+    cores = 24,
+    chunk_size = 15,
+    keep_score = FALSE,       # methylTFR never reads the match score
+    chromosomes = standardChrs(genome)
+)
 
-# Restrict the genome-wide GC table to CpG positions. methylTFR reads
-# that table only through findOverlaps() against methylation calls, so
-# windows that overlap no CpG are never used. For CpG methylomes this is
-# lossless and cuts the table by about two orders of magnitude.
-cpg <- cpgSites(BSgenome.Hsapiens.UCSC.hg38)
-
-# Create annotations
-build_annotations(annotations = "JASPAR2020",
-                  pkg.base.dir = pkg.base.dir,
-                  chunk_size = 2,
-                  genome = BSgenome.Hsapiens.UCSC.hg38,
-                  cores = 24,
-                  enhancer = NULL,
-                  gc_sites = cpg,      # omit for the full genome-wide table
-                  keep_score = FALSE)  # methylTFR never reads the score
+# Optional: GC frequency tables restricted to distal regulatory regions,
+# written as jaspar2020_distal_motif_gcfreq.rds
+# build_annotations("jaspar2020", pkg.base.dir = pkg_dir, genome = genome,
+#                   enhancer = distal_regions)
 ```
+
+Then install the result:
+
+```bash
+R CMD INSTALL methylTFRAnnotationHg38
+```
+
+Supported motif set names are `jaspar2020`, `jaspar2018`, `jaspar_vert`,
+`jaspar2016`, `cisbp`, `cisbpv2`, `homer` and `encode`; see
+`?prepareMotifmatchr`. You can also pass your own `PWMatrixList` to
+`findTFBindSites()`, or a `GRangesList` of binding sites to
+`build_annotations()`.
+
+The scripts that produced the published annotations are in
+`inst/scripts/make-data.R` of
+[methylTFRAnnotationHg38](https://github.com/EpigenomeInformatics/methylTFRAnnotationHg38)
+and
+[methylTFRAnnotationMm10](https://github.com/EpigenomeInformatics/methylTFRAnnotationMm10).
 
 ### Memory
 
-Binding-site discovery parallelises over chromosomes and matches every
-motif in one pass per chromosome, so peak memory scales with the number
-of workers times one chromosome, not one chromosome per motif. Setting
-`cores` above the number of chromosomes gains nothing.
+Binding-site discovery runs in parallel over chromosomes and matches every
+motif in one pass per chromosome, so peak memory is roughly the number of
+workers times one chromosome. Setting `cores` above the number of
+chromosomes gains nothing.
 
 The genome-wide GC scan runs in tiles, so the intermediate
-nucleotide-frequency matrix stays at tile size rather than reaching
-several gigabytes per chromosome. Lower `tile_size` if memory is tight.
+nucleotide-frequency matrix stays at tile size. Lower `tile_size` if
+memory is tight. The motif GC tables are computed in chunks of
+`chunk_size` motifs; each finished chunk is saved, so an interrupted run
+resumes where it stopped.
 
-```bash
-cd methylTFRAnnotationHg38
+## Citation
 
-# Install the package
-R CMD INSTALL .
-```
+If you use methylTFRAnnotationBuilder, please cite it together with
+methylTFR:
+
+> Gunduz IB, Mueller F (2026). methylTFRAnnotationBuilder: Build annotation packages for methylTFR. R package version 0.99.2. https://github.com/EpigenomeInformatics/methylTFRAnnotationBuilder
+
+> Gunduz IB, Murugan SK, Mueller F (2026). methylTFR: Quantification of DNA methylation signatures in TFBS. https://github.com/EpigenomeInformatics/methylTFR
+
+## License
+
+MIT, see [LICENSE.md](LICENSE.md).

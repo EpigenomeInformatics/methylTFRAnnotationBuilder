@@ -38,12 +38,9 @@ Find TF binding sites for a set of motifs across a genome.
 }
 \details{
 Work is parallelised over chromosomes, and every motif is matched in a
-single \code{matchMotifs} call per chromosome. The previous
-implementation parallelised over motifs with the chromosome loop
-inside, so each worker held a full chromosome sequence at the same
-time and the sequence of every chromosome was re-read once per motif.
-For a 600 motif set that was roughly 14,400 sequence loads where 24
-suffice, with peak memory proportional to the number of workers.
+single \code{matchMotifs} call per chromosome, so each chromosome
+sequence is read once. Peak memory scales with the number of workers
+times one chromosome.
 
 Binding sites are returned resized to \code{width + flank}. This width
 is load-bearing: \code{methylTFR::computeDeviation} widens the stored

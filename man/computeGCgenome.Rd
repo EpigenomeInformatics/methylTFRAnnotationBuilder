@@ -33,15 +33,12 @@ comparable with an annotation built at the default.}
 \item{bin_scope}{Either "genome" (default) or "chromosome". Genome
 scope matches the quantiles \code{build_annotations} uses for the
 motif GC frequency tables, so the observed and expected sides of a
-deviation score are binned on the same scale. "chromosome"
-reproduces the behaviour of earlier versions, where the two sides
-were binned differently.}
+deviation score are binned on the same scale. \code{build_annotations}
+refuses a table built with "chromosome" scope.}
 
 \item{chromosomes}{Character vector of sequences to scan. Defaults to
 the primary assembled chromosomes of \code{genome}, excluding the
-mitochondrion. Earlier versions took the first 24 sequence names,
-which is the human chromosome count: on mm10 that reached past chrY
-into unplaced scaffolds.}
+mitochondrion (see \code{\link{standardChrs}}).}
 }
 \value{
 A \code{GRanges} object with \code{GC_bias} and \code{GC_bin}
@@ -65,7 +62,5 @@ across the genome, the default, or per chromosome. Genome scope is
 the correct pairing, because \code{build_annotations} derives the
 motif GC frequency tables from genome-wide quantiles; under
 per-chromosome bins the observed and expected sides of a deviation
-score are binned on different scales. Earlier versions binned per
-chromosome, so annotations built before this change are not
-comparable with annotations built after it.
+score are binned on different scales.
 }
