@@ -1,3 +1,12 @@
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
+^LICENSE\.md$
+^CITATION\.cff$
+^\.github$
+(^|/)\._
+(^|/)\.DS_Store$
+(^|/)\.fuse_hidden
+^\.Rproj\.user$
+^\.Rhistory$
+^\.RData$

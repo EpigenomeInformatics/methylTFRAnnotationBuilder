@@ -18,13 +18,11 @@ A character vector of sequence names.
 The primary assembled chromosomes of a genome.
 }
 \details{
-Earlier versions took the first 24 sequence names, which is
-the human chromosome count. On mm10, which has 19 autosomes, that
-reaches past chrY into unplaced scaffolds; on any genome with a
-different sequence ordering it selects an arbitrary set. The
-chromosome list is now derived from the genome itself.
+The chromosome list is derived from the genome itself
+(\code{GenomeInfoDb::standardChromosomes}), so it is correct for any
+assembly: chr1-22, X, Y for hg38 and chr1-19, X, Y for mm10.
 
 The mitochondrion is excluded by default. Its GC content and
 methylation are both atypical, and at 16 kb it contributes nothing to
-genome-wide quantiles while skewing nothing but itself.
+genome-wide quantiles.
 }

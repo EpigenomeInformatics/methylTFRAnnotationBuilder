@@ -10,7 +10,8 @@ prepareMotifmatchr(genome, motifs, species = NULL, jaspar_opts = NULL)
 \item{genome}{character string specifying genome assembly, or a
 \code{BSgenome} object}
 
-\item{motifs}{either a character string ("jaspar", "encode", "cisbp", etc.) or an object containing PWMs}
+\item{motifs}{Either a character vector of motif set names (see
+Details) or a \code{PWMatrixList} / \code{PFMatrixList}.}
 
 \item{species}{NCBI taxonomy identifier used to filter the JASPAR
 collections. \code{NULL} derives it from \code{genome}.}
@@ -30,11 +31,14 @@ A list containing objects to be used as arguments for \code{motifmatchr}
 Prepare objects for a \code{motifmatchr} analysis
 }
 \details{
-The JASPAR collections are filtered by species. Earlier
-versions hardcoded \code{species = 9606} for jaspar2020, so asking
-for a mouse genome returned human matrices and the build completed
-without any error. The species is now taken from the genome unless
-one is given explicitly.
+The JASPAR collections are filtered by species, taken from
+the genome unless one is given explicitly.
+
+Supported motif set names: \code{"jaspar2020"}, \code{"jaspar2018"},
+\code{"jaspar_vert"} (JASPAR2018 vertebrate CORE), \code{"jaspar2016"}
+(via \pkg{chromVAR}), \code{"homer"}, \code{"encode"},
+\code{"cisbp"} and \code{"cisbpv2"} (also \code{"cisbp_v2"}), the
+last four from \pkg{chromVARmotifs}.
 }
 \author{
 Fabian Mueller

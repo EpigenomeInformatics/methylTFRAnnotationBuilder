@@ -30,15 +30,13 @@ taxonomyId <- function(organism) {
 
 #' @title standardChrs
 #' @description The primary assembled chromosomes of a genome.
-#' @details Earlier versions took the first 24 sequence names, which is
-#' the human chromosome count. On mm10, which has 19 autosomes, that
-#' reaches past chrY into unplaced scaffolds; on any genome with a
-#' different sequence ordering it selects an arbitrary set. The
-#' chromosome list is now derived from the genome itself.
+#' @details The chromosome list is derived from the genome itself
+#' (\code{GenomeInfoDb::standardChromosomes}), so it is correct for any
+#' assembly: chr1-22, X, Y for hg38 and chr1-19, X, Y for mm10.
 #'
 #' The mitochondrion is excluded by default. Its GC content and
 #' methylation are both atypical, and at 16 kb it contributes nothing to
-#' genome-wide quantiles while skewing nothing but itself.
+#' genome-wide quantiles.
 #' @param genome A \code{BSgenome} object.
 #' @param drop_mito Exclude the mitochondrial sequence.
 #' @return A character vector of sequence names.
@@ -61,14 +59,18 @@ standardChrs <- function(genome, drop_mito = TRUE) {
 
 #' @title prepareMotifmatchr
 #' @description Prepare objects for a \code{motifmatchr} analysis
-#' @details The JASPAR collections are filtered by species. Earlier
-#' versions hardcoded \code{species = 9606} for jaspar2020, so asking
-#' for a mouse genome returned human matrices and the build completed
-#' without any error. The species is now taken from the genome unless
-#' one is given explicitly.
+#' @details The JASPAR collections are filtered by species, taken from
+#' the genome unless one is given explicitly.
+#'
+#' Supported motif set names: \code{"jaspar2020"}, \code{"jaspar2018"},
+#' \code{"jaspar_vert"} (JASPAR2018 vertebrate CORE), \code{"jaspar2016"}
+#' (via \pkg{chromVAR}), \code{"homer"}, \code{"encode"},
+#' \code{"cisbp"} and \code{"cisbpv2"} (also \code{"cisbp_v2"}), the
+#' last four from \pkg{chromVARmotifs}.
 #' @param genome character string specifying genome assembly, or a
 #' \code{BSgenome} object
-#' @param motifs either a character string ("jaspar", "encode", "cisbp", etc.) or an object containing PWMs
+#' @param motifs Either a character vector of motif set names (see
+#' Details) or a \code{PWMatrixList} / \code{PFMatrixList}.
 #' @param species NCBI taxonomy identifier used to filter the JASPAR
 #' collections. \code{NULL} derives it from \code{genome}.
 #' @param jaspar_opts Optional named list passed to
@@ -155,37 +157,35 @@ prepareMotifmatchr <- function(genome, motifs, species = NULL,
     }
     if ("homer" %in% motifs) {
       if (!requireNamespace("chromVARmotifs", quietly = TRUE)) stop("chromVARmotifs package is required but not available.")
-      data("homer_pwms", package = "chromVARmotifs", envir = environment())
+      utils::data("homer_pwms", package = "chromVARmotifs", envir = environment())
       motifL <- c(motifL, chromVARmotifs::homer_pwms)
     }
     if ("encode" %in% motifs) {
       if (!requireNamespace("chromVARmotifs", quietly = TRUE)) stop("chromVARmotifs package is required but not available.")
-      data("encode_pwms", package = "chromVARmotifs", envir = environment())
+      utils::data("encode_pwms", package = "chromVARmotifs", envir = environment())
       motifL <- c(motifL, chromVARmotifs::encode_pwms)
     }
     if ("cisbp" %in% motifs) {
       if (!requireNamespace("chromVARmotifs", quietly = TRUE)) stop("chromVARmotifs package is required but not available.")
       if (spec == "Mus musculus") {
-        data("mouse_pwms_v1", package = "chromVARmotifs", envir = environment())
+        utils::data("mouse_pwms_v1", package = "chromVARmotifs", envir = environment())
         motifL <- c(motifL, chromVARmotifs::mouse_pwms_v1)
       } else if (spec == "Homo sapiens") {
-        data("human_pwms_v1", package = "chromVARmotifs", envir = environment())
+        utils::data("human_pwms_v1", package = "chromVARmotifs", envir = environment())
         motifL <- c(motifL, chromVARmotifs::human_pwms_v1)
       } else {
         warning(sprintf("Could not find cisBP annotation for species: %s", spec))
       }
     }
-    # cisbpv2 is accepted as well as cisbp_v2. The hg38 annotation files
-    # are named cisbpv2_*, so a set requested under that name has to
-    # resolve here or a from-scratch build writes files the accessors
-    # cannot find.
+    # cisbpv2 is accepted as well as cisbp_v2: the annotation files are
+    # named cisbpv2_*.
     if (any(c("cisbp_v2", "cisbpv2") %in% motifs)) {
       if (!requireNamespace("chromVARmotifs", quietly = TRUE)) stop("chromVARmotifs package is required but not available.")
       if (spec == "Mus musculus") {
-        data("mouse_pwms_v2", package = "chromVARmotifs", envir = environment())
+        utils::data("mouse_pwms_v2", package = "chromVARmotifs", envir = environment())
         motifL <- c(motifL, chromVARmotifs::mouse_pwms_v2)
       } else if (spec == "Homo sapiens") {
-        data("human_pwms_v2", package = "chromVARmotifs", envir = environment())
+        utils::data("human_pwms_v2", package = "chromVARmotifs", envir = environment())
         motifL <- c(motifL, chromVARmotifs::human_pwms_v2)
       } else {
         warning(sprintf("Could not find cisBP v2 annotation for species: %s", spec))
@@ -252,12 +252,9 @@ getGenomeObject <- function(assembly, adjChrNames = TRUE) {
 #' @description Find TF binding sites for a set of motifs across a genome.
 #' @details
 #' Work is parallelised over chromosomes, and every motif is matched in a
-#' single \code{matchMotifs} call per chromosome. The previous
-#' implementation parallelised over motifs with the chromosome loop
-#' inside, so each worker held a full chromosome sequence at the same
-#' time and the sequence of every chromosome was re-read once per motif.
-#' For a 600 motif set that was roughly 14,400 sequence loads where 24
-#' suffice, with peak memory proportional to the number of workers.
+#' single \code{matchMotifs} call per chromosome, so each chromosome
+#' sequence is read once. Peak memory scales with the number of workers
+#' times one chromosome.
 #'
 #' Binding sites are returned resized to \code{width + flank}. This width
 #' is load-bearing: \code{methylTFR::computeDeviation} widens the stored
@@ -337,8 +334,7 @@ findTFBindSites <- function(genome, motifs, BPPARAM = BiocParallel::bpparam(),
     }, BPPARAM = BPPARAM)
 
     # Collect each motif across chromosomes. A motif with no hits anywhere
-    # yields an empty GRanges rather than NULL, which previously produced
-    # a NULL element in the GRangesList.
+    # yields an empty GRanges rather than NULL.
     tf_binding_list <- lapply(seq_along(motif_names), function(i) {
         parts <- lapply(per_chr, function(x) x[[i]])
         parts <- parts[!vapply(parts, is.null, logical(1))]

@@ -28,15 +28,19 @@ representing TF binding sites.}
 \item{annotations_name}{Name for the annotation set (default: NULL), if annotations
 is a GRangesList, this parameter is mandatory.}
 
-\item{pkg.base.dir}{Output directory to save RDS files (default: inst/extdata)}
+\item{pkg.base.dir}{Package directory; files are written to its
+\code{inst/extdata} subdirectory.}
 
-\item{chunk_size}{Number of annotations to save per RDS (default: 10)}
+\item{chunk_size}{Number of motifs processed per checkpoint file. An
+interrupted run resumes from the last completed chunk.}
 
-\item{genome}{BSgenome object}
+\item{genome}{A \code{BSgenome} object.}
 
 \item{cores}{Number of cores to use for parallel processing (default: 10)}
 
-\item{enhancer}{GRanges object for distal regions (default: NULL)}
+\item{enhancer}{Optional \code{GRanges} of distal regulatory regions.
+When given, the GC frequency tables use only binding sites overlapping
+them and are written as \code{<set>_distal_motif_gcfreq.rds}.}
 
 \item{keep_score}{Retain the motif match score on each binding site.
 \code{methylTFR} never reads it; dropping it removes eight bytes per
@@ -66,9 +70,14 @@ is already present.}
 \code{TFBSTools::getMatrixSet} in place of species filtering, for
 example \code{list(tax_group = "vertebrates", collection = "CORE")}.}
 }
+\value{
+Invisibly \code{NULL}. Called for its side effect of writing
+\code{<set>_tf_bindsites.rds}, \code{<set>_motif_gcfreq.rds} and
+\code{genomewide_GC_<assembly>.rds} to \code{inst/extdata}.
+}
 \description{
 Build annotation RDS files from either motif set names or provided GRanges.
 }
 \author{
-Irem Gunduz
+Irem B. Gunduz
 }

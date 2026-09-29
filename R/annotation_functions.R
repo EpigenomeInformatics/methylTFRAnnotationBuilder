@@ -1,114 +1,36 @@
-#' @title calculate_gcdist
-#' @description  calculating GC distribution and GC frequency table
-#' @param genome The genome object to use, no default value is set
-#' @param threads The number of threads to use for parallel processing, default is 1
-#' @return GC content values for each chromosome
-#' @import GenomicRanges Biostrings parallel
-#' @export
-calculate_gcdist <- function(genome, threads = 1) {
-  chr_len <- seqlengths(genome)
-  chr_names <- names(chr_len)[1:24]
-  gc_dist <- parallel::mclapply(chr_names, get_gcdist,
-    genome = genome,
-    mc.cores = threads
-  )
-  return(unlist(gc_dist))
-}
-
-#' @title get_gcdist
-#' @description  get the GC distribution for a given chromosome
-#' @param chr The chromosome name
-#' @param genome The genome object to use
-#' @import GenomicRanges Biostrings
-#' @return GC content values for the chromosome
-#' @export
-get_gcdist <- function(chr, genome) {
-  seq_set <- Biostrings::getSeq(genome, chr)
-  # calculate GC content
-  nucfreqs <- Biostrings::letterFrequencyInSlidingView(
-    seq_set,
-    view.width = 30,
-    letters = c("A", "C", "G", "T")
-  )
-  gc_tmp <- rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs)
-  gc_tmp <- na.omit(gc_tmp)
-
-  return(gc_tmp)
-}
-
-#' @title compute_gc
-#' @description  compute the GC content for a given DNA sequence
-#' @param X The DNA sequence to compute GC content for
-#' @return GC content value
-#' @import Biostrings
-#' @export
-compute_gc <- function(X) {
-  x <- DNAString(as.character(X))
-  # center around
-  nucfreqs <- Biostrings::letterFrequencyInSlidingView(x,
-    view.width = 30,
-    letters = c("A", "C", "G", "T")
-  )
-  gc <- rowSums(nucfreqs[, 2:3]) / rowSums(nucfreqs)
-  return(gc)
-}
-
-#' @title convert_to_bins
-#' @description  convert GC content values to bins
-#' @param x The GC content values to convert
-#' @param gc_bin The GC bins to use for conversion
-#' @return A matrix of bin indices
-#' @export
-convert_to_bins <- function(x, gc_bin) {
-  bin <- cbind(1:length(x), findInterval(x, gc_bin, rightmost.closed = TRUE))
-  return(bin)
-}
-
-#' @title convert_to_matrix
-#' @description convert bin indices to a matrix
-#' @param bins The bin indices to convert
-#' @return A matrix of bin indices
-#' @export
-convert_to_matrix <- function(bins) {
-  mat <- matrix(0, 5, dim(bins)[1])
-  bins <- na.omit(bins)
-  mat[base::cbind(bins[, 2], bins[, 1])] <- 1
-  return(mat)
-}
-
-
 #' @title processMotifs2Matrix
 #' @description Tabulate, for every offset along a motif's footprint
 #' window, how its binding sites distribute across the five GC bins.
 #' @details
-#' Sites are processed in batches rather than one at a time. The earlier
-#' implementation ran four R-level loops over every binding site --
-#' \code{compute_gc}, \code{convert_to_bins}, \code{convert_to_matrix}
-#' and a \code{Reduce} -- allocating a five-by-n matrix per site and
-#' summing millions of them. \code{compute_gc} also round-tripped each
-#' site through \code{as.character} before counting. For a motif with a
-#' million sites that is several million R calls and allocations to
-#' produce one small matrix.
+#' Each binding site is widened by 130 bases (65 on either side) and a
+#' 30 nt window is slid along it one base at a time. Every window is
+#' assigned to one of the five GC bins defined by \code{gc_bin}, and for
+#' each window position the fraction of binding sites falling into each
+#' bin is recorded. Windows containing \code{N} produce no GC value and
+#' are dropped rather than binned.
 #'
-#' Each batch is now unlisted into a single sequence and every window of
-#' every site is counted in one \code{letterFrequency} call over a
-#' \code{Views} object, then accumulated with \code{tabulate}. Windows
-#' cannot straddle a site boundary because each site contributes only
-#' offsets 1 to width minus 29.
-#'
-#' Verified bit-identical to the previous implementation across motif
-#' widths and on sequences containing N, which is the case that produces
-#' NaN GC and has to be dropped rather than binned.
-#' @param motif The motif to process
-#' @param gc_bin The GC bins to use for conversion
-#' @param genome The genome object to use
-#' @param tf_bindsites The TF binding sites to use
-#' @param enhancer The enhancer regions to use
+#' Sites are processed in batches: each batch is unlisted into a single
+#' sequence and all of its windows are counted in one
+#' \code{letterFrequency} call over a \code{Views} object, then
+#' accumulated with \code{tabulate}. Windows cannot straddle a site
+#' boundary because each site contributes only offsets 1 to width minus
+#' 29.
+#' @param motif Name of the motif to process (an element name of
+#' \code{tf_bindsites}).
+#' @param gc_bin The six GC bin boundaries, as returned by
+#' \code{\link{gcBreaks}}.
+#' @param genome A \code{BSgenome} object.
+#' @param tf_bindsites A \code{GRangesList} of binding sites, as returned
+#' by \code{\link{findTFBindSites}}.
+#' @param enhancer Optional \code{GRanges}. When given, only binding
+#' sites overlapping these regions are used (for example distal
+#' regulatory regions).
 #' @param batch_size Number of binding sites held in memory at once.
 #' Peak memory is roughly \code{batch_size} times the window count times
 #' sixteen bytes.
 #' @import GenomicRanges Biostrings
-#' @return A matrix of GC content values
+#' @return A numeric matrix with five rows (GC bins, lowest first) and
+#' one column per window position; each column sums to one.
 #' @export
 processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites,
                                  enhancer = NULL, batch_size = 20000L) {
@@ -123,7 +45,7 @@ processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites,
   nw <- W - win + 1L
 
   if (!is.null(enhancer)) {
-    tfbs <- subsetByOverlaps(tfbs, enhancer, ignore.strand = TRUE)
+    tfbs <- IRanges::subsetByOverlaps(tfbs, enhancer, ignore.strand = TRUE)
   }
   n <- length(tfbs)
   logger::log_info(paste0(
@@ -178,9 +100,7 @@ processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites,
 #' the correct pairing, because \code{build_annotations} derives the
 #' motif GC frequency tables from genome-wide quantiles; under
 #' per-chromosome bins the observed and expected sides of a deviation
-#' score are binned on different scales. Earlier versions binned per
-#' chromosome, so annotations built before this change are not
-#' comparable with annotations built after it.
+#' score are binned on different scales.
 #' @param genome A \code{BSgenome} object.
 #' @param cores Number of parallel workers.
 #' @param tile_size Number of windows scanned per tile.
@@ -196,14 +116,11 @@ processMotifs2Matrix <- function(motif, gc_bin, genome, tf_bindsites,
 #' @param bin_scope Either "genome" (default) or "chromosome". Genome
 #' scope matches the quantiles \code{build_annotations} uses for the
 #' motif GC frequency tables, so the observed and expected sides of a
-#' deviation score are binned on the same scale. "chromosome"
-#' reproduces the behaviour of earlier versions, where the two sides
-#' were binned differently.
+#' deviation score are binned on the same scale. \code{build_annotations}
+#' refuses a table built with "chromosome" scope.
 #' @param chromosomes Character vector of sequences to scan. Defaults to
 #' the primary assembled chromosomes of \code{genome}, excluding the
-#' mitochondrion. Earlier versions took the first 24 sequence names,
-#' which is the human chromosome count: on mm10 that reached past chrY
-#' into unplaced scaffolds.
+#' mitochondrion (see \code{\link{standardChrs}}).
 #' @return A \code{GRanges} object with \code{GC_bias} and \code{GC_bin}
 #' metadata columns.
 #' @import GenomicRanges Biostrings
@@ -361,10 +278,7 @@ computeGCgenome_helper <- function(genome, chr, chr_len, tile_size = 5e6,
         )
 
         # Count over exactly the windows wanted rather than over every
-        # offset and discarding the rest. letterFrequencyInSlidingView
-        # computes one row per position regardless of step, so at
-        # step 30 it did thirty times the work and allocated thirty
-        # times the matrix.
+        # offset and discarding the rest.
         v <- Biostrings::Views(
             tile_seq,
             start = gs - seq_from + 1L, width = win

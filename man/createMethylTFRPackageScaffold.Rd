@@ -37,19 +37,17 @@ Invisibly, \code{TRUE} if the package directory and its \code{DESCRIPTION} file 
 Creates a scaffold folder structure for a methylTFR annotation package.
 }
 \details{
-The generated accessors validate their argument against the motif sets
-the package was actually built with. Earlier versions wrote a check
-against \code{motifSets}, a variable that exists only while the
-scaffold is being generated and is undefined inside the finished
-package, so the generated accessor failed at run time. The valid
-names are now written into the generated file as a literal.
+The scaffold contains \code{getTFbindsites()}, \code{getGCfreq()} and
+\code{getGenomeGC()} accessors that read the \code{.rds} files
+written by \code{\link{build_annotations}} into \code{inst/extdata}.
+The accessors validate their argument against the motif sets the
+package was built with, which are written into the generated code as
+literals. File names are lower case throughout, matching
+\code{build_annotations}.
 
-File names are normalised to lower case on both sides, here and in
-\code{build_annotations}. Previously the accessor upper-cased the
-motif set before building the file name while \code{build_annotations}
-wrote the name as supplied, so any set whose name was not already
-upper case resolved to a missing file and failed inside
-\code{readRDS("")}.
+The published methylTFRAnnotationHg38 and methylTFRAnnotationMm10
+packages serve the same files from AnnotationHub instead of
+\code{inst/extdata}, because the files are too large for a package.
 }
 \examples{
 \donttest{
@@ -57,6 +55,6 @@ createMethylTFRPackageScaffold("hg38", dest = tempdir())
 }
 }
 \author{
-methylTFR Authors
-Inspired by \code{createPackageScaffold} from the \code{RnBeadsAnnotationCreator} package.
+Irem B. Gunduz. Inspired by \code{createPackageScaffold} from
+the \pkg{RnBeadsAnnotationCreator} package.
 }
